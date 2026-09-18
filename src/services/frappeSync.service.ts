@@ -18,10 +18,28 @@ interface FrappeQuizSubmissionDetail {
   result: FrappeQuizResultRow[];
 }
 
+interface FrappeQuizDoc {
+  name: string;
+  title: string;
+  lesson: string | null;
+}
+
+interface FrappeLessonDoc {
+  name: string;
+  title: string;
+}
+
 export interface SyncResult {
   submissionsSeen: number;
   eventsIngested: number;
   errors: number;
+}
+
+/** Resolved once per quiz, cached for the rest of one sync cycle so 90 submissions of the
+ * same quiz don't trigger 90 redundant lookups of the same lesson. */
+interface QuizObjectiveInfo {
+  objectiveId: string;
+  objectiveLabel: string;
 }
 
 export class FrappeSyncService {
@@ -47,6 +65,11 @@ export class FrappeSyncService {
     const result: SyncResult = { submissionsSeen: 0, eventsIngested: 0, errors: 0 };
     let latestCreation = since;
 
+    // Lesson-as-objective is the level of granularity we ship with: quiz.lesson
+    // already exists in Frappe today, so mastery works with zero new fields or
+    // editor UI on that side. Cached per quiz name for this sync cycle only.
+    const quizObjectiveCache = new Map<string, QuizObjectiveInfo | null>();
+
     try {
       const names = await this.fetchSubmissionNamesSince(
         connection.baseUrl,
@@ -70,8 +93,21 @@ export class FrappeSyncService {
 
           const learnerId = this.anonymizeLearnerId(submission.member);
 
+          const objectiveInfo = await this.getOrFetchObjectiveForQuiz(
+            connection.baseUrl,
+            connection.apiKey,
+            connection.apiSecret,
+            submission.quiz,
+            quizObjectiveCache
+          );
+
           for (const row of submission.result || []) {
             if (!row.question_name) continue; // can't map to a canonical item without a stable id
+
+            if (objectiveInfo) {
+              await this.registerObjectiveAndItem(tenantId, objectiveInfo, row.question_name, row.question);
+            }
+
             const ingested = await eventsService.ingestEvent(tenantId, {
               event_id: `frappe_qr_${row.name}`,
               event_type: 'assessment.answered',
@@ -108,10 +144,84 @@ export class FrappeSyncService {
     return result;
   }
 
+  /**
+   * Resolves quiz -> lesson -> LearningObjective, caching the lookup per quiz
+   * for the current sync cycle. Returns null (not thrown) if the quiz has no
+   * lesson linked, so the caller can still ingest the event without an
+   * objective mapping rather than failing the whole submission over it.
+   */
+  private async getOrFetchObjectiveForQuiz(
+    baseUrl: string,
+    apiKey: string,
+    apiSecret: string,
+    quizName: string,
+    cache: Map<string, QuizObjectiveInfo | null>
+  ): Promise<QuizObjectiveInfo | null> {
+    if (cache.has(quizName)) {
+      return cache.get(quizName) ?? null;
+    }
+
+    let info: QuizObjectiveInfo | null = null;
+    try {
+      const quiz = await this.fetchDoc<FrappeQuizDoc>(baseUrl, apiKey, apiSecret, 'LMS Quiz', quizName);
+      if (quiz.lesson) {
+        const lesson = await this.fetchDoc<FrappeLessonDoc>(baseUrl, apiKey, apiSecret, 'Course Lesson', quiz.lesson);
+        info = { objectiveId: lesson.name, objectiveLabel: lesson.title || lesson.name };
+      }
+    } catch {
+      // Leave info as null - events still get ingested, just without a mastery mapping yet.
+      info = null;
+    }
+
+    cache.set(quizName, info);
+    return info;
+  }
+
+  private async registerObjectiveAndItem(
+    tenantId: string,
+    objective: QuizObjectiveInfo,
+    questionName: string,
+    questionText: string
+  ) {
+    await prisma.learningObjective.upsert({
+      where: { tenantId_id: { tenantId, id: objective.objectiveId } },
+      update: { label: objective.objectiveLabel },
+      create: { tenantId, id: objective.objectiveId, label: objective.objectiveLabel },
+    });
+
+    await prisma.assessmentItem.upsert({
+      where: { tenantId_id: { tenantId, id: questionName } },
+      update: { objectiveIds: [objective.objectiveId] },
+      create: {
+        tenantId,
+        id: questionName,
+        itemType: 'mcq',
+        promptText: questionText || `Assessment Item ${questionName}`,
+        objectiveIds: [objective.objectiveId],
+      },
+    });
+  }
+
   private async recordError(tenantId: string, message: string) {
     await prisma.frappeConnection
       .update({ where: { tenantId }, data: { lastSyncError: message } })
       .catch(() => {});
+  }
+
+  private async fetchDoc<T>(
+    baseUrl: string,
+    apiKey: string,
+    apiSecret: string,
+    doctype: string,
+    name: string
+  ): Promise<T> {
+    const url = `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent(doctype)}/${encodeURIComponent(name)}`;
+    const res = await fetch(url, { headers: { Authorization: this.authHeader(apiKey, apiSecret) } });
+    if (!res.ok) {
+      throw new Error(`Frappe API error ${res.status} fetching ${doctype} ${name}: ${await res.text()}`);
+    }
+    const data: any = await res.json();
+    return data.data;
   }
 
   private async fetchSubmissionNamesSince(
@@ -122,9 +232,10 @@ export class FrappeSyncService {
   ): Promise<string[]> {
     const filters = encodeURIComponent(JSON.stringify([['creation', '>', since.toISOString()]]));
     const fields = encodeURIComponent(JSON.stringify(['name']));
+    const orderBy = encodeURIComponent('creation asc');
     const url =
-      `${baseUrl.replace(/\/$/, '')}/api/resource/LMS Quiz Submission` +
-      `?filters=${filters}&fields=${fields}&limit_page_length=0&order_by=creation asc`;
+      `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent('LMS Quiz Submission')}` +
+      `?filters=${filters}&fields=${fields}&limit_page_length=0&order_by=${orderBy}`;
 
     const res = await fetch(url, { headers: { Authorization: this.authHeader(apiKey, apiSecret) } });
     if (!res.ok) {
@@ -140,13 +251,7 @@ export class FrappeSyncService {
     apiSecret: string,
     name: string
   ): Promise<FrappeQuizSubmissionDetail> {
-    const url = `${baseUrl.replace(/\/$/, '')}/api/resource/LMS Quiz Submission/${encodeURIComponent(name)}`;
-    const res = await fetch(url, { headers: { Authorization: this.authHeader(apiKey, apiSecret) } });
-    if (!res.ok) {
-      throw new Error(`Frappe API error ${res.status} fetching submission ${name}: ${await res.text()}`);
-    }
-    const data: any = await res.json();
-    return data.data;
+    return this.fetchDoc<FrappeQuizSubmissionDetail>(baseUrl, apiKey, apiSecret, 'LMS Quiz Submission', name);
   }
 }
 
