@@ -9,6 +9,10 @@ const ConnectionInputSchema = z.object({
   api_key: z.string().min(1),
   api_secret: z.string().min(1),
   enabled: z.boolean().default(true),
+  // Forces the next sync to re-walk full history instead of only what's new
+  // since the last watermark - e.g. after a mapping/objective fix that needs
+  // to reach submissions already ingested under the old behavior.
+  reset_watermark: z.boolean().default(false),
 });
 
 export async function frappeSyncRoutes(app: FastifyInstance) {
@@ -28,11 +32,18 @@ export async function frappeSyncRoutes(app: FastifyInstance) {
       });
     }
 
-    const { base_url, api_key, api_secret, enabled } = parseResult.data;
+    const { base_url, api_key, api_secret, enabled, reset_watermark } = parseResult.data;
 
     const connection = await prisma.frappeConnection.upsert({
       where: { tenantId: req.tenantId },
-      update: { baseUrl: base_url, apiKey: api_key, apiSecret: api_secret, enabled, lastSyncError: null },
+      update: {
+        baseUrl: base_url,
+        apiKey: api_key,
+        apiSecret: api_secret,
+        enabled,
+        lastSyncError: null,
+        ...(reset_watermark ? { lastSyncedAt: null } : {}),
+      },
       create: {
         tenantId: req.tenantId,
         baseUrl: base_url,
