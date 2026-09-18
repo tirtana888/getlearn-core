@@ -733,8 +733,10 @@
         const res = await fetch('/v1/analytics/overview', {
           headers: { 'Authorization': `Bearer ${apiKey}` }
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error?.message || `HTTP ${res.status}`);
+        }
 
         // Update Tenant Info
         document.getElementById('tenantTokenBalance').textContent = Number(data.tenant.token_balance).toLocaleString();
@@ -779,6 +781,8 @@
         }
       } catch (err) {
         console.error("Dashboard error:", err);
+        document.getElementById('objectivesTableBody').innerHTML =
+          `<tr><td colspan="5" style="text-align: center; color: #F87171;">Gagal memuat data: ${err.message}. Cek API key di kanan atas.</td></tr>`;
       }
     }
 
@@ -928,10 +932,13 @@
           },
           body: JSON.stringify({
             learner_id: learnerId,
-            objective_id: objectiveId
+            objective_ids: objectiveId ? [objectiveId] : []
           })
         });
         const data = await res.json();
+        if (!res.ok || !data.session_id) {
+          throw new Error(data?.error?.message || `HTTP ${res.status}`);
+        }
         currentSessionId = data.session_id;
         document.getElementById('chatSessionTitle').textContent = `Session: ${currentSessionId.substring(0, 16)}...`;
         
@@ -953,6 +960,10 @@
 
       if (!currentSessionId) {
         await startNewChatSession();
+      }
+      if (!currentSessionId) {
+        // startNewChatSession already alerted the real reason (e.g. invalid API key)
+        return;
       }
 
       const apiKey = getApiKey();
@@ -992,6 +1003,9 @@
         });
 
         const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error?.message || `HTTP ${res.status}`);
+        }
         loadingBubble.innerHTML = `
           <div>${data.response}</div>
           <div style="font-size: 0.725rem; color: #818CF8; margin-top: 0.35rem; display: flex; justify-content: space-between;">
