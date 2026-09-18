@@ -3,6 +3,13 @@ import { prisma } from '../lib/prisma.js';
 import { ragService } from './rag.service.js';
 import { ChatScope, ChatSender } from '@prisma/client';
 
+/**
+ * Minimum cosine similarity threshold for retrieved chunks to be considered relevant for AI tutoring.
+ * Calibrated in the 0.55 - 0.65 range for semantic embeddings (text-embedding-004).
+ * Chunks below this threshold are discarded to prevent hallucinated answers on off-topic questions.
+ */
+export const CHAT_SIMILARITY_THRESHOLD = 0.55;
+
 export class ChatService {
   private ai: GoogleGenAI | null = null;
 
@@ -123,8 +130,11 @@ export class ChatService {
       },
     });
 
-    // 2. Retrieve relevant content chunks using pgvector
-    const retrievedChunks = await ragService.searchSimilarChunks(tenantId, userMessage, 3);
+    // 2. Retrieve relevant content chunks using pgvector with similarity threshold filtering
+    // In production with Gemini embeddings (text-embedding-004), threshold is CHAT_SIMILARITY_THRESHOLD (0.55).
+    // In dev / fallback mode with deterministic n-gram hashing, threshold adapts to 0.25 to prevent false rejections.
+    const activeThreshold = ragService.hasGeminiEmbeddings() ? CHAT_SIMILARITY_THRESHOLD : 0.25;
+    const retrievedChunks = await ragService.searchSimilarChunks(tenantId, userMessage, 3, activeThreshold);
     const sourceContentIds = Array.from(new Set(retrievedChunks.map((c) => c.contentItemId)));
 
     const contextText = retrievedChunks.map((c) => c.chunkText).join('\n---\n');

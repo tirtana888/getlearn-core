@@ -112,12 +112,20 @@ export class RagService {
   }
 
   /**
+   * Returns true if Gemini embedding model is configured and active
+   */
+  hasGeminiEmbeddings(): boolean {
+    return this.ai !== null;
+  }
+
+  /**
    * Semantic search using pgvector cosine distance
    */
   async searchSimilarChunks(
     tenantId: string,
     queryText: string,
-    limit = 5
+    limit = 5,
+    minSimilarity?: number
   ): Promise<
     Array<{
       id: string;
@@ -142,13 +150,19 @@ export class RagService {
       limit
     );
 
-    return results.map((r: any) => ({
+    const mapped = results.map((r: any) => ({
       id: r.id,
       contentItemId: r.content_item_id,
       chunkIndex: r.chunk_index,
       chunkText: r.chunk_text,
       similarity: parseFloat(r.similarity),
     }));
+
+    if (typeof minSimilarity === 'number') {
+      return mapped.filter((r: any) => r.similarity >= minSimilarity);
+    }
+
+    return mapped;
   }
 
   /**
