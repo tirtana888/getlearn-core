@@ -162,12 +162,20 @@ export class MasteryService {
       },
     });
 
+    const pct = Math.round(highestConfidence.score * 100);
+    const tier =
+      pct === 100
+        ? 'Penguasaan sempurna'
+        : pct >= 90
+          ? 'Penguasaan sangat baik'
+          : 'Penguasaan baik, sudah lolos ambang batas';
+
     return {
       learner_id: learnerId,
       action: 'practice',
       target_id: assessment?.id || highestConfidence.objectiveId,
       reason_objective_id: highestConfidence.objectiveId,
-      explanation: `Penguasaan materi baik! Pertahankan dengan latihan pendalaman pada "${highestConfidence.objective.label}".`,
+      explanation: `${tier} (${pct}%) pada "${highestConfidence.objective.label}". Pertahankan dengan latihan pendalaman.`,
     };
   }
 }
