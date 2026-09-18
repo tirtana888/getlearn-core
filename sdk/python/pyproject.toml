@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "getlearn-ai"
+version = "0.1.0"
+description = "Official Python SDK for getlearn.ai Learner Intelligence Infrastructure"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+    { name = "getlearn.ai", email = "founder@cekmy.id" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Education",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/tirtana888/getlearn-core"
+Documentation = "https://getlearn-core-production.up.railway.app/docs"
+Repository = "https://github.com/tirtana888/getlearn-core"

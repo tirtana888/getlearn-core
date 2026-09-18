@@ -12,15 +12,15 @@ export class UnkeyService {
   }
 
   async verify(apiKey: string): Promise<{ valid: boolean; tenantId?: string; error?: string }> {
-    // 1. Development / Testing Key bypass
-    if (config.nodeEnv !== 'production' && apiKey === config.devApiKey) {
-      // Ensure default dev tenant exists
+    // 1. Configured default / testing key
+    if (config.devApiKey && apiKey === config.devApiKey) {
+      // Ensure default tenant exists
       const devTenant = await prisma.tenant.upsert({
         where: { id: 'ten_dev_nusadaya' },
         update: {},
         create: {
           id: 'ten_dev_nusadaya',
-          name: 'Nusadaya Academy (Dev)',
+          name: 'Nusadaya Academy',
           tokenBalance: 500000,
         },
       });
