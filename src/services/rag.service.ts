@@ -155,16 +155,27 @@ export class RagService {
    */
   private createDeterministicVector(text: string, dimensions = 768): number[] {
     const vec = new Array(dimensions).fill(0);
-    let hash = 0;
+    const tokens = text.toLowerCase().match(/\w+/g) || [];
 
-    for (let i = 0; i < text.length; i++) {
-      hash = (hash << 5) - hash + text.charCodeAt(i);
-      hash |= 0;
-      const idx = Math.abs(hash) % dimensions;
-      vec[idx] += 1;
+    for (const token of tokens) {
+      // Whole word feature (higher weight)
+      let wh = 0;
+      for (let i = 0; i < token.length; i++) {
+        wh = (wh * 31 + token.charCodeAt(i)) % dimensions;
+      }
+      vec[Math.abs(wh)] += 5;
+
+      // Character trigrams (subword feature)
+      for (let i = 0; i <= token.length - 3; i++) {
+        let th = 0;
+        for (let j = i; j < i + 3; j++) {
+          th = (th * 37 + token.charCodeAt(j)) % dimensions;
+        }
+        vec[Math.abs(th)] += 2;
+      }
     }
 
-    // Normalize to unit length
+    // Normalize to unit length for cosine similarity
     const norm = Math.sqrt(vec.reduce((sum, v) => sum + v * v, 0)) || 1;
     return vec.map((v) => parseFloat((v / norm).toFixed(6)));
   }

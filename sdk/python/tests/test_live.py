@@ -23,13 +23,14 @@ def main():
     print(f"    [OK] Registered objective: {obj.id} - {obj.label}")
     assert obj.id == "obj_py_geom_01"
 
-    # 2. Register Content Item
+    # 2. Register Content Item with raw_text
     print("[2] Registering Content Item...")
     content = client.register_content_item(
         id="lesson_circle_01",
         type="video",
         objective_ids=["obj_py_geom_01"],
         source_uri="https://www.youtube.com/watch?v=example",
+        raw_text="Pelajaran Geometri Lingkaran: Rumus luas lingkaran adalah L = pi * r^2. Jika jari-jari r = 7 cm, maka Luas = 22/7 * 7 * 7 = 154 cm^2. Rumus keliling lingkaran adalah K = 2 * pi * r = 2 * 22/7 * 7 = 44 cm.",
     )
     print(f"    [OK] Registered content: {content.id} (type: {content.type})")
     assert content.id == "lesson_circle_01"

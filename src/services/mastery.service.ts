@@ -121,18 +121,27 @@ export class MasteryService {
       let targetId = gap.objectiveId;
       let excerpt = '';
 
-      const similarChunks = await ragService.searchSimilarChunks(tenantId, gap.objective.label, 1);
-      if (similarChunks.length > 0) {
-        targetId = similarChunks[0].contentItemId;
-        excerpt = similarChunks[0].chunkText;
-      } else {
-        const content = await prisma.contentItem.findFirst({
-          where: {
-            tenantId,
-            objectiveIds: { has: gap.objectiveId },
-          },
+      // 1. Check directly mapped content item first
+      const directlyMapped = await prisma.contentItem.findFirst({
+        where: {
+          tenantId,
+          objectiveIds: { has: gap.objectiveId },
+        },
+      });
+
+      if (directlyMapped) {
+        targetId = directlyMapped.id;
+        const chunk = await prisma.contentChunk.findFirst({
+          where: { tenantId, contentItemId: directlyMapped.id },
         });
-        if (content) targetId = content.id;
+        if (chunk) excerpt = chunk.chunkText;
+      } else {
+        // 2. Fallback to vector search across all chunks
+        const similarChunks = await ragService.searchSimilarChunks(tenantId, gap.objective.label, 1);
+        if (similarChunks.length > 0) {
+          targetId = similarChunks[0].contentItemId;
+          excerpt = similarChunks[0].chunkText;
+        }
       }
 
       return {
