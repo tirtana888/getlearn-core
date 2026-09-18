@@ -36,7 +36,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const apiKey = await unkeyService.issueKey(
       tenant.id,
       tenant.name,
-      rate_limit ? { ratelimit: { limit: rate_limit, refillRate: rate_limit } } : undefined
+      rate_limit ? { ratelimit: { limit: rate_limit } } : undefined
     );
 
     return reply.status(201).send({

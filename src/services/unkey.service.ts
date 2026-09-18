@@ -1,13 +1,12 @@
-import { verifyKey, Unkey } from '@unkey/api';
+import { Unkey } from '@unkey/api';
+import * as unkeyErrors from '@unkey/api/models/errors';
 import { config } from '../config/env.js';
 import { prisma } from '../lib/prisma.js';
 
 export interface IssueKeyOptions {
   ratelimit?: {
-    type?: 'fast' | 'consistent';
     limit?: number;
-    refillRate?: number;
-    refillInterval?: number;
+    duration?: number;
   };
 }
 
@@ -15,7 +14,7 @@ export interface VerificationResult {
   valid: boolean;
   tenantId?: string;
   error?: string;
-  code?: 'NOT_FOUND' | 'FORBIDDEN' | 'USAGE_EXCEEDED' | 'RATE_LIMITED' | string;
+  code?: string;
   ratelimit?: {
     limit: number;
     remaining: number;
@@ -48,41 +47,46 @@ export class UnkeyService {
       return { valid: true, tenantId: devTenant.id };
     }
 
-    // 2. Unkey Verification if configured
+    // 2. Unkey v2 verification if configured (SDK 2.x targets api.unkey.com, not the retired api.unkey.dev)
     if (this.unkeyClient) {
       try {
-        const verifyPayload = config.unkeyApiId
-          ? { key: apiKey, apiId: config.unkeyApiId }
-          : apiKey;
-        const { result, error } = await verifyKey(verifyPayload);
-        if (error) {
-          return { valid: false, error: error.message };
+        const { data } = await this.unkeyClient.keys.verifyKey({ key: apiKey });
+
+        if (!data.valid) {
+          const message =
+            data.code === 'RATE_LIMITED'
+              ? 'Rate limit exceeded. Please retry later.'
+              : data.code === 'USAGE_EXCEEDED'
+                ? 'Key usage limit exceeded'
+                : data.code || 'Key verification failed';
+          return { valid: false, code: data.code, error: message };
         }
-        if (result.code === 'RATE_LIMITED') {
-          return {
-            valid: false,
-            code: 'RATE_LIMITED',
-            error: 'Rate limit exceeded. Please retry later.',
-            ratelimit: result.ratelimit,
-          };
+
+        if (!data.meta || typeof data.meta.tenantId !== 'string') {
+          return { valid: false, error: 'Key does not contain valid tenant metadata' };
         }
-        if (result.valid && result.meta && typeof result.meta.tenantId === 'string') {
-          return {
-            valid: true,
-            tenantId: result.meta.tenantId,
-            ratelimit: result.ratelimit,
-          };
-        }
+
+        const appliedLimit = data.ratelimits?.find((r) => r.autoApply) ?? data.ratelimits?.[0];
+
         return {
-          valid: false,
-          code: result.code,
-          error: result.code === 'USAGE_EXCEEDED'
-            ? 'Key usage limit exceeded'
-            : (result.code || 'Key does not contain valid tenant metadata'),
-          ratelimit: result.ratelimit,
+          valid: true,
+          tenantId: data.meta.tenantId,
+          ratelimit: appliedLimit
+            ? {
+                limit: appliedLimit.limit,
+                remaining: appliedLimit.remaining,
+                reset: appliedLimit.reset,
+              }
+            : undefined,
         };
       } catch (err: any) {
-        return { valid: false, error: err.message };
+        if (err instanceof unkeyErrors.TooManyRequestsErrorResponse) {
+          return { valid: false, code: 'RATE_LIMITED', error: 'Rate limit exceeded. Please retry later.' };
+        }
+        if (err instanceof unkeyErrors.UnkeyError) {
+          return { valid: false, error: err.message };
+        }
+        return { valid: false, error: err.message || 'Unkey verification failed' };
       }
     }
 
@@ -105,30 +109,25 @@ export class UnkeyService {
     options?: IssueKeyOptions
   ): Promise<string> {
     if (this.unkeyClient && config.unkeyApiId) {
-      const ratelimitConfig = options?.ratelimit ? {
-        type: options.ratelimit.type ?? ('fast' as const),
-        limit: options.ratelimit.limit ?? config.rateLimitRequests,
-        refillRate: options.ratelimit.refillRate ?? config.rateLimitRequests,
-        refillInterval: options.ratelimit.refillInterval ?? config.rateLimitDurationMs,
-      } : {
-        type: 'fast' as const,
-        limit: config.rateLimitRequests,
-        refillRate: config.rateLimitRequests,
-        refillInterval: config.rateLimitDurationMs,
-      };
-
-      const created = await this.unkeyClient.keys.create({
-        apiId: config.unkeyApiId,
-        prefix: 'gl',
-        meta: { tenantId },
-        name: `Key for ${tenantName}`,
-        ratelimit: ratelimitConfig,
-      });
-      if (created.result?.key) {
-        return created.result.key;
-      }
-      if (created.error) {
-        throw new Error(`Failed to issue key via Unkey: ${created.error.message}`);
+      try {
+        const { data } = await this.unkeyClient.keys.createKey({
+          apiId: config.unkeyApiId,
+          prefix: 'gl',
+          meta: { tenantId },
+          name: `Key for ${tenantName}`,
+          ratelimits: [
+            {
+              name: 'default',
+              limit: options?.ratelimit?.limit ?? config.rateLimitRequests,
+              duration: options?.ratelimit?.duration ?? config.rateLimitDurationMs,
+              autoApply: true,
+            },
+          ],
+        });
+        return data.key;
+      } catch (err: any) {
+        const message = err instanceof unkeyErrors.UnkeyError ? err.message : err.message || String(err);
+        throw new Error(`Failed to issue key via Unkey: ${message}`);
       }
     }
 
