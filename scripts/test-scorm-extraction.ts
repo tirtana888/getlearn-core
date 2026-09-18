@@ -30,7 +30,7 @@ async function main() {
   const realFetch = global.fetch;
   global.fetch = (async (url: string) => {
     console.log(`[mock fetch] ${url}`);
-    return new Response(zipBuffer, { status: 200 });
+    return new Response(new Uint8Array(zipBuffer), { status: 200 });
   }) as typeof fetch;
 
   try {
