@@ -12,6 +12,7 @@ import { learnerRoutes } from './modules/learners/routes.js';
 import { adminRoutes } from './modules/admin/routes.js';
 import { chatRoutes } from './modules/chat/routes.js';
 import { analyticsRoutes } from './modules/analytics/routes.js';
+import { frappeSyncRoutes } from './modules/frappe-sync/routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -106,6 +107,7 @@ export async function buildApp() {
   await app.register(eventRoutes);
   await app.register(learnerRoutes);
   await app.register(chatRoutes);
+  await app.register(frappeSyncRoutes);
 
   // Global Error Handler
   app.setErrorHandler((error, request, reply) => {

@@ -22,8 +22,29 @@ model Tenant {
   masteryRecords   MasteryRecord[]
   contentChunks    ContentChunk[]
   chatSessions     ChatSession[]
+  frappeConnection FrappeConnection?
 
   @@map("tenants")
+}
+
+// Pull-based sync config for a tenant whose source LMS is Frappe/Frappe LMS.
+// getlearn.ai calls OUT to the Frappe site's own REST API on a schedule -
+// nothing is pushed from the Frappe side for this. See FrappeSyncService.
+model FrappeConnection {
+  id            String    @id @default(uuid())
+  tenantId      String    @unique @map("tenant_id")
+  baseUrl       String    @map("base_url")
+  apiKey        String    @map("api_key")
+  apiSecret     String    @map("api_secret")
+  enabled       Boolean   @default(true)
+  lastSyncedAt  DateTime? @map("last_synced_at")
+  lastSyncError String?   @map("last_sync_error") @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("frappe_connections")
 }
 
 model Learner {
