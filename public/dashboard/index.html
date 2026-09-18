@@ -796,6 +796,9 @@
           headers: { 'Authorization': `Bearer ${apiKey}` }
         });
         const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error?.message || `HTTP ${res.status}`);
+        }
         tbody.innerHTML = '';
 
         if (!data.learners || data.learners.length === 0) {
@@ -855,6 +858,12 @@
 
         const masteryData = await masteryRes.json();
         const nextActionData = await nextActionRes.json();
+        if (!masteryRes.ok) {
+          throw new Error(masteryData?.error?.message || `HTTP ${masteryRes.status}`);
+        }
+        if (!nextActionRes.ok) {
+          throw new Error(nextActionData?.error?.message || `HTTP ${nextActionRes.status}`);
+        }
 
         let html = `
           <h4 style="margin-bottom: 0.5rem; font-size: 0.95rem;">Competency Mastery Records</h4>
@@ -893,18 +902,12 @@
               Targeted Next Action: ${nextActionData.action.toUpperCase()}
             </h4>
             <p style="font-size: 0.85rem; color: #D1D5DB; margin-bottom: 0.5rem;">
-              <strong>Reason:</strong> ${nextActionData.reason}
+              <strong>Reason:</strong> ${nextActionData.explanation}
             </p>
-        `;
-
-        if (nextActionData.recommended_content) {
-          html += `
             <div style="background: rgba(0,0,0,0.25); padding: 0.75rem; border-radius: 6px; font-size: 0.825rem;">
-              <div><strong>Lesson:</strong> ${nextActionData.recommended_content.title}</div>
-              <div style="color: #9CA3AF; margin-top: 0.25rem;"><em>${nextActionData.recommended_content.excerpt || ''}</em></div>
+              <div><strong>Target:</strong> ${nextActionData.target_id}</div>
             </div>
-          `;
-        }
+        `;
 
         html += '</div>';
         modalBody.innerHTML = html;
@@ -1047,7 +1050,10 @@
           body: JSON.stringify({ query, limit: 5 })
         });
         const data = await res.json();
-        
+        if (!res.ok) {
+          throw new Error(data?.error?.message || `HTTP ${res.status}`);
+        }
+
         if (!data.results || data.results.length === 0) {
           container.innerHTML = '<div style="color: var(--text-muted);">No matching content chunks found.</div>';
           return;
@@ -1059,11 +1065,11 @@
           html += `
             <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 0.75rem;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
-                <span style="font-weight: 600; color: #F9FAFB;">#${idx + 1} ${r.content_title}</span>
+                <span style="font-weight: 600; color: #F9FAFB;">#${idx + 1} ${r.content_item_id}</span>
                 <span class="badge badge-success">${simPct}% Vector Similarity</span>
               </div>
               <p style="font-size: 0.85rem; color: #D1D5DB; line-height: 1.4; margin-bottom: 0.4rem;">
-                ${r.content}
+                ${r.chunk_text}
               </p>
               <div style="font-size: 0.75rem; color: #9CA3AF;">
                 Content Item ID: <code style="font-family: monospace;">${r.content_item_id}</code> | Chunk: ${r.chunk_index}
