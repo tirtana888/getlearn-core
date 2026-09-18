@@ -164,6 +164,38 @@ async function main() {
     console.log(`  [${idempotentOnRerun ? 'PASS' : 'FAIL'}] second run sees no submissions (watermark prevents re-fetch)`);
     if (!idempotentOnRerun) allPass = false;
 
+    console.log(
+      '\n[4] Backfill scenario: simulate an event ingested by pre-lesson-mapping code ' +
+        '(objectiveIds wiped, mastery record removed), then re-sync the SAME submission ' +
+        '(watermark rewound) - the event is a duplicate, but mastery must still get fixed.\n'
+    );
+    await prisma.assessmentItem.update({
+      where: { tenantId_id: { tenantId, id: 'q_front_office_01' } },
+      data: { objectiveIds: [] },
+    });
+    await prisma.masteryRecord.deleteMany({ where: { tenantId, objectiveId: fakeLesson.name } });
+    await prisma.frappeConnection.update({ where: { tenantId }, data: { lastSyncedAt: new Date(0) } });
+
+    const backfillResult = await frappeSyncService.syncTenant(tenantId);
+    console.log('Backfill run result:', backfillResult);
+
+    const itemAfterBackfill = await prisma.assessmentItem.findUnique({
+      where: { tenantId_id: { tenantId, id: 'q_front_office_01' } },
+    });
+    const masteryAfterBackfill = await prisma.masteryRecord.findUnique({
+      where: { tenantId_learnerId_objectiveId: { tenantId, learnerId: learner!.id, objectiveId: fakeLesson.name } },
+    });
+
+    const backfillChecks = [
+      { name: 'backfill run reported 0 newly-processed events (they were duplicates)', pass: backfillResult.eventsIngested === 0 },
+      { name: 'objectiveIds restored on the existing item despite the duplicate event', pass: Boolean(itemAfterBackfill?.objectiveIds.includes(fakeLesson.name)) },
+      { name: 'mastery record recreated from old events without a fresh event', pass: Boolean(masteryAfterBackfill) },
+    ];
+    for (const c of backfillChecks) {
+      console.log(`  [${c.pass ? 'PASS' : 'FAIL'}] ${c.name}`);
+      if (!c.pass) allPass = false;
+    }
+
     if (!allPass) {
       throw new Error('One or more assertions failed.');
     }

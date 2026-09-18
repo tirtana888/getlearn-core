@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { eventsService } from './events.service.js';
+import { masteryService } from './mastery.service.js';
 
 interface FrappeQuizResultRow {
   name: string;
@@ -101,6 +102,16 @@ export class FrappeSyncService {
             quizObjectiveCache
           );
 
+          // Resolved once here (not left to ingestEvent) because mastery needs the
+          // internal learner id even when the event itself turns out to be a
+          // duplicate - see the comment below on why mastery is recalculated
+          // unconditionally instead of only on a fresh "processed" event.
+          const learner = await prisma.learner.upsert({
+            where: { tenantId_externalRef: { tenantId, externalRef: learnerId } },
+            update: {},
+            create: { tenantId, externalRef: learnerId },
+          });
+
           for (const row of submission.result || []) {
             if (!row.question_name) continue; // can't map to a canonical item without a stable id
 
@@ -121,6 +132,16 @@ export class FrappeSyncService {
             });
             if (ingested.status === 'processed') {
               result.eventsIngested++;
+            }
+
+            // Recalculated unconditionally, not gated on ingested.status === 'processed':
+            // an item's objective mapping can be fixed up (registerObjectiveAndItem, above)
+            // for a submission that was already ingested in an earlier sync cycle, before
+            // this quiz->lesson resolution existed. mastery.service.ts recomputes from all
+            // of that learner's existing events for the item, so re-running this is always
+            // safe, never double-counts, and is what actually backfills old data.
+            if (objectiveInfo) {
+              await masteryService.updateMasteryForItem(tenantId, learner.id, row.question_name);
             }
           }
         } catch (err: any) {
