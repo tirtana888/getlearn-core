@@ -80,19 +80,41 @@ export async function contentItemRoutes(app: FastifyInstance) {
       },
     });
 
+    // Pre-flight check: reject immediately with HTTP 402 if tenant balance is depleted
+    if ((hasRawText || initialStatus === IndexingStatus.pending) && req.tenant.tokenBalance <= 0) {
+      return reply.status(402).send({
+        error: {
+          code: 'TOKEN_BALANCE_EXHAUSTED',
+          message: 'Tenant token balance is exhausted. Please top up credits to index content.',
+        },
+      });
+    }
+
     // Case 1: raw_text is directly provided (synchronous chunk & embed)
     if (hasRawText) {
-      const chunksCount = await ragService.chunkAndEmbedContentItem(req.tenantId, contentItem.id, raw_text!);
-      return reply.status(200).send({
-        id: contentItem.id,
-        type: contentItem.type,
-        source_uri: contentItem.sourceUri,
-        objective_ids: contentItem.objectiveIds,
-        tenant_id: contentItem.tenantId,
-        indexing_status: IndexingStatus.completed,
-        indexing_error: null,
-        chunks_indexed: chunksCount,
-      });
+      try {
+        const chunksCount = await ragService.chunkAndEmbedContentItem(req.tenantId, contentItem.id, raw_text!);
+        return reply.status(200).send({
+          id: contentItem.id,
+          type: contentItem.type,
+          source_uri: contentItem.sourceUri,
+          objective_ids: contentItem.objectiveIds,
+          tenant_id: contentItem.tenantId,
+          indexing_status: IndexingStatus.completed,
+          indexing_error: null,
+          chunks_indexed: chunksCount,
+        });
+      } catch (err: any) {
+        if (err.code === 'TOKEN_BALANCE_EXHAUSTED' || err.statusCode === 402) {
+          return reply.status(402).send({
+            error: {
+              code: 'TOKEN_BALANCE_EXHAUSTED',
+              message: err.message || 'Tenant token balance is exhausted.',
+            },
+          });
+        }
+        throw err;
+      }
     }
 
     // Case 2: Multimodal extraction required (type pdf/video with source_uri)
@@ -106,7 +128,7 @@ export async function contentItemRoutes(app: FastifyInstance) {
       (async () => {
         try {
           app.log.info(`[ContentItem Indexing] Starting Gemini extraction for item '${itemId}' (${itemType}) from '${source}'`);
-          const extractedText = await ragService.extractTextFromSource(itemType, source);
+          const extractedText = await ragService.extractTextFromSource(itemType, source, tenantId);
 
           // Save extracted text to rawText
           await prisma.contentItem.update({
@@ -252,17 +274,40 @@ export async function contentItemRoutes(app: FastifyInstance) {
     }
 
     const { query, limit } = parseResult.data;
-    const results = await ragService.searchSimilarChunks(req.tenantId, query, limit);
 
-    return reply.status(200).send({
-      query,
-      results: results.map((r) => ({
-        chunk_id: r.id,
-        content_item_id: r.contentItemId,
-        chunk_index: r.chunkIndex,
-        chunk_text: r.chunkText,
-        similarity: r.similarity,
-      })),
-    });
+    // Pre-flight check: reject immediately with HTTP 402 if tenant balance is depleted
+    if (req.tenant.tokenBalance <= 0) {
+      return reply.status(402).send({
+        error: {
+          code: 'TOKEN_BALANCE_EXHAUSTED',
+          message: 'Tenant token balance is exhausted. Please top up credits to search content.',
+        },
+      });
+    }
+
+    try {
+      const results = await ragService.searchSimilarChunks(req.tenantId, query, limit);
+
+      return reply.status(200).send({
+        query,
+        results: results.map((r) => ({
+          chunk_id: r.id,
+          content_item_id: r.contentItemId,
+          chunk_index: r.chunkIndex,
+          chunk_text: r.chunkText,
+          similarity: r.similarity,
+        })),
+      });
+    } catch (err: any) {
+      if (err.code === 'TOKEN_BALANCE_EXHAUSTED' || err.statusCode === 402) {
+        return reply.status(402).send({
+          error: {
+            code: 'TOKEN_BALANCE_EXHAUSTED',
+            message: err.message || 'Tenant token balance is exhausted.',
+          },
+        });
+      }
+      throw err;
+    }
   });
 }

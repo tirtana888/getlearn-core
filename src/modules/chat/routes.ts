@@ -69,6 +69,16 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const { message, is_assessment_active } = parseResult.data;
 
+    // Pre-flight check: reject immediately with HTTP 402 if tenant balance is depleted
+    if (req.tenant.tokenBalance <= 0) {
+      return reply.status(402).send({
+        error: {
+          code: 'TOKEN_BALANCE_EXHAUSTED',
+          message: 'Tenant token balance is exhausted. Please top up credits to use AI coach.',
+        },
+      });
+    }
+
     try {
       const response = await chatService.sendMessage(
         req.tenantId,
@@ -79,6 +89,14 @@ export async function chatRoutes(app: FastifyInstance) {
       );
       return reply.status(200).send(response);
     } catch (err: any) {
+      if (err.code === 'TOKEN_BALANCE_EXHAUSTED' || err.statusCode === 402) {
+        return reply.status(402).send({
+          error: {
+            code: 'TOKEN_BALANCE_EXHAUSTED',
+            message: err.message || 'Tenant token balance is exhausted.',
+          },
+        });
+      }
       return reply.status(404).send({
         error: {
           code: 'SESSION_NOT_FOUND',

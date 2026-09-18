@@ -80,6 +80,18 @@ export class RagService {
     contentItemId: string,
     rawText: string
   ): Promise<number> {
+    // Pre-flight check: verify tenant token balance before executing embeddings
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { tokenBalance: true },
+    });
+    if (tenant && tenant.tokenBalance <= 0) {
+      const err: any = new Error('Tenant token balance is exhausted. Please top up credits to index content.');
+      err.code = 'TOKEN_BALANCE_EXHAUSTED';
+      err.statusCode = 402;
+      throw err;
+    }
+
     // 1. Delete previous chunks for this item
     await prisma.$executeRawUnsafe(
       `DELETE FROM content_chunks WHERE tenant_id = $1 AND content_item_id = $2`,
@@ -90,6 +102,8 @@ export class RagService {
     // 2. Chunk text
     const chunks = this.splitIntoChunks(rawText);
     if (!chunks.length) return 0;
+
+    let totalEmbeddingTokens = 0;
 
     // 3. Generate embeddings and save
     for (let i = 0; i < chunks.length; i++) {
@@ -106,6 +120,19 @@ export class RagService {
         chunkText,
         vectorStr
       );
+
+      // Conservative fixed estimation: @google/genai embedContent (Developer API) does not return usageMetadata.
+      // Standard token estimate for text-embedding-004 is ~1 token per 4 characters.
+      const estChunkTokens = Math.max(1, Math.ceil(chunkText.length / 4));
+      totalEmbeddingTokens += estChunkTokens;
+    }
+
+    // Deduct tokens from tenant balance for successfully embedded chunks
+    if (totalEmbeddingTokens > 0) {
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: { tokenBalance: { decrement: totalEmbeddingTokens } },
+      });
     }
 
     return chunks.length;
@@ -135,7 +162,27 @@ export class RagService {
       similarity: number;
     }>
   > {
+    // Pre-flight check: verify tenant token balance before query vectorization
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { tokenBalance: true },
+    });
+    if (tenant && tenant.tokenBalance <= 0) {
+      const err: any = new Error('Tenant token balance is exhausted. Please top up credits to search content.');
+      err.code = 'TOKEN_BALANCE_EXHAUSTED';
+      err.statusCode = 402;
+      throw err;
+    }
+
     const queryVector = await this.generateEmbedding(queryText);
+
+    // Conservative fixed estimation: query text embedding (~1 token per 4 characters)
+    const estQueryTokens = Math.max(1, Math.ceil(queryText.length / 4));
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { tokenBalance: { decrement: estQueryTokens } },
+    });
+
     const vectorStr = `[${queryVector.join(',')}]`;
 
     const results: any = await prisma.$queryRawUnsafe(
@@ -168,7 +215,11 @@ export class RagService {
   /**
    * Extract text from multimodal source_uri (PDF or Video) via Gemini
    */
-  async extractTextFromSource(type: ContentType, sourceUri: string): Promise<string> {
+  async extractTextFromSource(
+    type: ContentType,
+    sourceUri: string,
+    tenantId?: string
+  ): Promise<string> {
     if (type === ContentType.scorm) {
       // SCORM package parsing is handled on the LMS connector side (e.g. Nusadaya LMS fork).
       // getlearn-core does not scrape SCORM packages directly; connectors must supply raw_text.
@@ -187,18 +238,31 @@ export class RagService {
       throw new Error('GEMINI_API_KEY is not configured on the server. Multimodal extraction requires Gemini.');
     }
 
+    if (tenantId) {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { tokenBalance: true },
+      });
+      if (tenant && tenant.tokenBalance <= 0) {
+        const err: any = new Error('Tenant token balance is exhausted. Please top up credits to extract content.');
+        err.code = 'TOKEN_BALANCE_EXHAUSTED';
+        err.statusCode = 402;
+        throw err;
+      }
+    }
+
     if (type === ContentType.pdf) {
-      return this.extractFromPdf(sourceUri);
+      return this.extractFromPdf(sourceUri, tenantId);
     }
 
     if (type === ContentType.video) {
-      return this.extractFromVideo(sourceUri);
+      return this.extractFromVideo(sourceUri, tenantId);
     }
 
     throw new Error(`Unsupported content type for extraction: ${type}`);
   }
 
-  private async extractFromPdf(sourceUri: string): Promise<string> {
+  private async extractFromPdf(sourceUri: string, tenantId?: string): Promise<string> {
     // 1. Fetch PDF binary from sourceUri
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
@@ -265,6 +329,17 @@ export class RagService {
       if (!extracted) {
         throw new Error('Gemini extracted empty text from PDF document');
       }
+
+      // Deduct actual tokens from usageMetadata if available; otherwise conservative estimate
+      if (tenantId) {
+        const tokensUsed = response.usageMetadata?.totalTokenCount 
+          ?? Math.max(1, Math.ceil(extracted.length / 4));
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { tokenBalance: { decrement: tokensUsed } },
+        });
+      }
+
       return extracted;
     } finally {
       // Clean up uploaded file on Gemini
@@ -274,7 +349,7 @@ export class RagService {
     }
   }
 
-  private async extractFromVideo(sourceUri: string): Promise<string> {
+  private async extractFromVideo(sourceUri: string, tenantId?: string): Promise<string> {
     const isYouTube = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)/i.test(sourceUri);
 
     if (isYouTube) {
@@ -297,6 +372,16 @@ export class RagService {
       if (!extracted) {
         throw new Error('Gemini extracted empty text from YouTube video');
       }
+
+      if (tenantId) {
+        const tokensUsed = response.usageMetadata?.totalTokenCount 
+          ?? Math.max(1, Math.ceil(extracted.length / 4));
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { tokenBalance: { decrement: tokensUsed } },
+        });
+      }
+
       return extracted;
     }
 
@@ -359,6 +444,16 @@ export class RagService {
       if (!extracted) {
         throw new Error('Gemini extracted empty text from video file');
       }
+
+      if (tenantId) {
+        const tokensUsed = response.usageMetadata?.totalTokenCount 
+          ?? Math.max(1, Math.ceil(extracted.length / 4));
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { tokenBalance: { decrement: tokensUsed } },
+        });
+      }
+
       return extracted;
     } finally {
       if (uploadedFile?.name) {

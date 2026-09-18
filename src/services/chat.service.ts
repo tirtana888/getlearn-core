@@ -120,6 +120,20 @@ export class ChatService {
       throw new Error('Chat session not found');
     }
 
+    // Pre-flight check: verify tenant token balance before executing AI services
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { tokenBalance: true },
+    });
+    if (tenant && tenant.tokenBalance <= 0) {
+      const err: any = new Error('Tenant token balance is exhausted. Please top up credits to use AI coach.');
+      err.code = 'TOKEN_BALANCE_EXHAUSTED';
+      err.statusCode = 402;
+      throw err;
+    }
+
+    let tokensUsed = 0;
+
     // 1. Save User Message
     await prisma.chatMessage.create({
       data: {
@@ -209,6 +223,17 @@ ${userMessage}`;
         });
 
         assistantReply = modelRes.text || '';
+
+        // Token usage tracking & tenant balance deduction
+        // @google/genai provides usageMetadata.totalTokenCount
+        const genTokens = modelRes.usageMetadata?.totalTokenCount 
+          ?? Math.max(1, Math.ceil((`${systemPrompt}\n\n${prompt}`.length + assistantReply.length) / 4)); // Conservative estimate if usageMetadata is absent
+
+        tokensUsed += genTokens;
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: { tokenBalance: { decrement: genTokens } },
+        });
       } catch (err) {
         console.warn('Gemini text generation failed, using fallback coach response:', err);
       }
@@ -227,8 +252,25 @@ ${userMessage}`;
     }
 
     // 4. Fish Audio Voice Synthesis (Optional ?voice=true)
-    if (voiceRequested) {
-      finalAudioUrl = await this.generateVoiceFishAudio(assistantReply);
+    if (voiceRequested && assistantReply) {
+      // Re-verify tenant balance before invoking external TTS API
+      const currentTenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { tokenBalance: true },
+      });
+      if (currentTenant && currentTenant.tokenBalance > 0) {
+        finalAudioUrl = await this.generateVoiceFishAudio(assistantReply);
+        if (finalAudioUrl) {
+          // Conservative fixed estimation: Fish Audio TTS external API does not return token usage metadata.
+          // Charge fixed 50 tokens per synthesized voice clip.
+          const ttsCost = 50;
+          tokensUsed += ttsCost;
+          await prisma.tenant.update({
+            where: { id: tenantId },
+            data: { tokenBalance: { decrement: ttsCost } },
+          });
+        }
+      }
     }
 
     // 5. Save Assistant Message
@@ -253,7 +295,7 @@ ${userMessage}`;
       source_content_ids: assistantMsg.sourceContentIds,
       audio_url: assistantMsg.audioUrl,
       voice_audio_url: assistantMsg.audioUrl, // alias for frontend / python sdk compatibility
-      tokens_used: 120,
+      tokens_used: tokensUsed,
       created_at: assistantMsg.createdAt.toISOString(),
     };
   }
