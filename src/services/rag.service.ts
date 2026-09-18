@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { ContentType } from '@prisma/client';
+import JSZip from 'jszip';
 import { prisma } from '../lib/prisma.js';
 
 export class RagService {
@@ -221,18 +222,17 @@ export class RagService {
     sourceUri: string,
     tenantId?: string
   ): Promise<string> {
-    if (type === ContentType.scorm) {
-      // SCORM package parsing is handled on the LMS connector side (e.g. Nusadaya LMS fork).
-      // getlearn-core does not scrape SCORM packages directly; connectors must supply raw_text.
-      throw new Error('SCORM content extraction is handled on the LMS connector side. Please provide raw_text directly.');
-    }
-
     if (type === ContentType.text) {
       return '';
     }
 
     if (!sourceUri || !sourceUri.trim()) {
       throw new Error('Source URI is empty or invalid.');
+    }
+
+    if (type === ContentType.scorm) {
+      // Mechanical HTML extraction — no Gemini call, no token cost, works even without GEMINI_API_KEY.
+      return this.extractFromScorm(sourceUri);
     }
 
     if (!this.ai) {
@@ -461,6 +461,97 @@ export class RagService {
         this.ai!.files.delete({ name: uploadedFile.name }).catch(() => {});
       }
     }
+  }
+
+  /**
+   * Extract text from a SCORM package. source_uri may point to either:
+   *  - a downloadable .zip of the whole package (most SCORM exports, incl. Easygenerator), or
+   *  - a single launch HTML page (if the connector only exposes the unzipped entry point).
+   * Which one it is gets detected by sniffing the fetched bytes for the ZIP magic number,
+   * not by file extension.
+   */
+  private async extractFromScorm(sourceUri: string): Promise<string> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    let res: Response;
+    try {
+      res = await fetch(sourceUri, { signal: controller.signal });
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error(`Network timeout fetching SCORM package from ${sourceUri} (exceeded 60s)`);
+      }
+      throw new Error(`Failed to fetch SCORM package from ${sourceUri}: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status} ${res.statusText} fetching SCORM package from ${sourceUri}`);
+    }
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0) {
+      throw new Error(`Fetched SCORM source from ${sourceUri} is empty (0 bytes)`);
+    }
+
+    const isZip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+
+    if (!isZip) {
+      // Not a zip - treat as a single launch page. Only covers that one page's text,
+      // which is usually incomplete for a multi-slide SCORM package.
+      const text = this.stripHtml(buf.toString('utf-8'));
+      if (!text) {
+        throw new Error(
+          `SCORM source_uri did not return a zip package or extractable HTML text: ${sourceUri}`
+        );
+      }
+      return text;
+    }
+
+    const zip = await JSZip.loadAsync(buf);
+    const htmlPaths = Object.keys(zip.files)
+      .filter((path) => !zip.files[path].dir)
+      .filter((path) => /\.(html?|xhtml)$/i.test(path))
+      // Skip SCORM runtime/API scaffold pages, not actual lesson content
+      .filter((path) => !/api[_-]?wrapper|scorm[_-]?api|imsmanifest/i.test(path))
+      .sort();
+
+    if (!htmlPaths.length) {
+      throw new Error(`SCORM package at ${sourceUri} contains no HTML content files to extract`);
+    }
+
+    const pageTexts: string[] = [];
+    for (const path of htmlPaths) {
+      const raw = await zip.files[path].async('string');
+      const text = this.stripHtml(raw);
+      if (text) pageTexts.push(text);
+    }
+
+    const combined = pageTexts.join('\n\n---\n\n');
+    if (!combined) {
+      throw new Error(`SCORM package at ${sourceUri} had HTML files but no visible text after stripping markup`);
+    }
+    return combined;
+  }
+
+  /**
+   * Crude but dependency-free HTML-to-text: drops script/style/comments, strips tags,
+   * unescapes common entities, and collapses whitespace.
+   */
+  private stripHtml(html: string): string {
+    return html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<!--[\s\S]*?-->/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   /**

@@ -41,13 +41,12 @@ export async function contentItemRoutes(app: FastifyInstance) {
 
     // Determine initial indexing status:
     // - If raw_text is supplied: completed immediately (or skipped if empty text)
-    // - If type is pdf/video and source_uri is supplied without raw_text: pending (background multimodal extraction)
-    // - If scorm: skipped (SCORM package extraction is handled by the LMS connector side)
+    // - If type is pdf/video/scorm and source_uri is supplied without raw_text: pending (background extraction)
     // - Otherwise: skipped
     let initialStatus: IndexingStatus;
     if (hasRawText) {
       initialStatus = IndexingStatus.completed;
-    } else if (hasSourceUri && (type === 'pdf' || type === 'video')) {
+    } else if (hasSourceUri && (type === 'pdf' || type === 'video' || type === 'scorm')) {
       initialStatus = IndexingStatus.pending;
     } else {
       initialStatus = IndexingStatus.skipped;
@@ -179,7 +178,7 @@ export async function contentItemRoutes(app: FastifyInstance) {
       });
     }
 
-    // Case 3: Skipped (e.g. text without content, or scorm awaiting raw_text from connector)
+    // Case 3: Skipped (no raw_text and no source_uri to extract from)
     return reply.status(200).send({
       id: contentItem.id,
       type: contentItem.type,
