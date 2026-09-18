@@ -4,30 +4,28 @@
 
 ---
 
-## 🌟 Fitur Utama (Fase 0 & Fase 1)
+## 🌟 Fitur Platform (Fase 0 - Fase 5)
 
-- **Spesifikasi Standar OpenAPI 3.1** ([`docs/openapi.yaml`](./docs/openapi.yaml)):
-  - 7 Entitas kanonik: `Tenant`, `Learner`, `LearningObjective`, `ContentItem`, `AssessmentItem`, `AssessmentEvent`, `MasteryRecord`.
-  - Auth standard: `BearerAuth` API Key (terintegrasi dengan Unkey / Dev key).
-- **Backend Fastify + TypeScript**:
-  - Arsitektur modular berkecepatan tinggi dengan validasi schema Zod.
-  - Dokumentasi interaktif Swagger UI di `/docs`.
-- **Database PostgreSQL Terkelola (Railway)**:
-  - Multi-tenant dengan isolasi `tenant_id` dan dukungan Row-Level Security (RLS) & `pgvector`.
-  - Pengelolaan skema modern menggunakan Prisma ORM.
-- **Event Ingestion dengan Idempotency**:
-  - `POST /v1/events` dengan deduplikasi `event_id` per tenant untuk mencegah *double count* saat network retry.
-- **Kalkulasi Mastery & Rekomendasi Naif (Fase 1)**:
-  - Menghitung skor penguasaan objektif secara otomatis dari aliran asesmen.
-  - Mendeteksi gap belajar (skor $< 0.70$) dan merekomendasikan materi *review* yang tepat.
+- **Spesifikasi Standar OpenAPI 3.1** ([`docs/openapi.yaml`](./docs/openapi.yaml)): 7 Entitas kanonik, auth standard `BearerAuth` API Key.
+- **Backend Fastify + TypeScript**: Arsitektur modular berkecepatan tinggi dengan validasi schema Zod dan Swagger UI.
+- **Database PostgreSQL Terkelola + pgvector (Railway)**: Multi-tenant dengan isolasi `tenant_id`, vector similarity search 768-dim, dan Prisma ORM.
+- **Event Ingestion dengan Idempotency**: `POST /v1/events` dengan deduplikasi `event_id` per tenant untuk mencegah double counting.
+- **Kalkulasi Mastery & Bayesian Knowledge Tracing**: Estimasi penguasaan konsep real-time, deteksi skill gap, dan rekomendasi konten remedial via pgvector cosine search.
+- **Official Python SDK (`getlearn-ai`)**: Zero external dependencies, typed model data, dan konektor siap pakai untuk Frappe LMS (`doc_events` hooks).
+- **AI Study Coach & Chat Engine**: Pembukaan sesi otomatis berbasis kelemahan siswa, Socratic guardrails pencegah kebocoran kunci jawaban, lesson citations, dan dukungan audio TTS voice.
+- **Web Frontend Dashboards**:
+  - **Client Portal** (`/dashboard`): Analitik penguasaan kurikulum, daftar siswa & intervensi targeted, sandbox chat Socratic coach, dan vector RAG explorer.
+  - **Superadmin Control Plane** (`/superadmin`): Observabilitas fleet tenant, instant provisioning, dan credit top-up.
 
 ---
 
-## 🚀 Live Deployment di Railway
+## 🚀 Live Production di Railway
 
-- **Production URL**: `https://getlearn-core-production.up.railway.app`
-- **Swagger Docs**: `https://getlearn-core-production.up.railway.app/docs`
-- **Health Check**: `https://getlearn-core-production.up.railway.app/health`
+- **Client Portal**: [https://getlearn-core-production.up.railway.app/dashboard](https://getlearn-core-production.up.railway.app/dashboard)
+- **Superadmin Control Plane**: [https://getlearn-core-production.up.railway.app/superadmin](https://getlearn-core-production.up.railway.app/superadmin)
+- **Swagger Docs**: [https://getlearn-core-production.up.railway.app/docs](https://getlearn-core-production.up.railway.app/docs)
+- **Health Check**: [https://getlearn-core-production.up.railway.app/health](https://getlearn-core-production.up.railway.app/health)
+- **GitHub Repository**: [https://github.com/tirtana888/getlearn-core](https://github.com/tirtana888/getlearn-core)
 
 ---
 
