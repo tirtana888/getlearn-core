@@ -79,13 +79,18 @@ export async function chatRoutes(app: FastifyInstance) {
       });
     }
 
+    const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
+    const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3000';
+    const baseUrl = `${protocol}://${host}`;
+
     try {
       const response = await chatService.sendMessage(
         req.tenantId,
         id,
         message,
         is_assessment_active,
-        voiceRequested
+        voiceRequested,
+        baseUrl
       );
       return reply.status(200).send(response);
     } catch (err: any) {

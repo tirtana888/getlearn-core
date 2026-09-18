@@ -63,6 +63,12 @@ export async function buildApp() {
     prefix: '/public/',
   });
 
+  // Audio files route alias (/audio/:filename -> public/audio/:filename)
+  app.get('/audio/:filename', async (req, reply) => {
+    const { filename } = req.params as { filename: string };
+    return reply.sendFile(`audio/${filename}`);
+  });
+
   // Health check route
   app.get('/health', async () => {
     return {

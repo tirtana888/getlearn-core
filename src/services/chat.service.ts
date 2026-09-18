@@ -1,3 +1,8 @@
+import fs from 'fs';
+import path from 'path';
+import { randomUUID } from 'crypto';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
 import { GoogleGenAI } from '@google/genai';
 import { prisma } from '../lib/prisma.js';
 import { ragService } from './rag.service.js';
@@ -109,7 +114,8 @@ export class ChatService {
     sessionId: string,
     userMessage: string,
     isAssessmentActive = false,
-    voiceRequested = false
+    voiceRequested = false,
+    baseUrl?: string
   ) {
     const session = await prisma.chatSession.findUnique({
       where: { id: sessionId },
@@ -253,22 +259,25 @@ ${userMessage}`;
 
     // 4. Fish Audio Voice Synthesis (Optional ?voice=true)
     if (voiceRequested && assistantReply) {
-      // Re-verify tenant balance before invoking external TTS API
-      const currentTenant = await prisma.tenant.findUnique({
-        where: { id: tenantId },
-        select: { tokenBalance: true },
-      });
-      if (currentTenant && currentTenant.tokenBalance > 0) {
-        finalAudioUrl = await this.generateVoiceFishAudio(assistantReply);
-        if (finalAudioUrl) {
-          // Conservative fixed estimation: Fish Audio TTS external API does not return token usage metadata.
-          // Charge fixed 50 tokens per synthesized voice clip.
-          const ttsCost = 50;
-          tokensUsed += ttsCost;
-          await prisma.tenant.update({
-            where: { id: tenantId },
-            data: { tokenBalance: { decrement: ttsCost } },
-          });
+      const fishKey = process.env.FISH_AUDIO_API_KEY;
+      if (fishKey) {
+        // Re-verify tenant balance before invoking external TTS API
+        const currentTenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { tokenBalance: true },
+        });
+        if (currentTenant && currentTenant.tokenBalance > 0) {
+          finalAudioUrl = await this.generateVoiceFishAudio(assistantReply, baseUrl);
+          if (finalAudioUrl) {
+            // Conservative fixed estimation: Fish Audio TTS external API does not return token usage metadata.
+            // Charge fixed 50 tokens per synthesized voice clip.
+            const ttsCost = 50;
+            tokensUsed += ttsCost;
+            await prisma.tenant.update({
+              where: { id: tenantId },
+              data: { tokenBalance: { decrement: ttsCost } },
+            });
+          }
         }
       }
     }
@@ -336,13 +345,15 @@ ${userMessage}`;
   }
 
   /**
-   * Fish Audio TTS integration helper
+   * Fish Audio TTS integration helper.
+   * Fetches real audio stream from Fish Audio API and persists bytes to public/audio/<uuid>.mp3.
+   * If FISH_AUDIO_API_KEY is not configured, returns null (no fake URLs).
    */
-  private async generateVoiceFishAudio(text: string): Promise<string | null> {
+  private async generateVoiceFishAudio(text: string, baseUrl?: string): Promise<string | null> {
     const fishKey = process.env.FISH_AUDIO_API_KEY;
     if (!fishKey) {
-      // In dev / demo mode: return a structured demo voice indicator
-      return `https://api.fish.audio/v1/tts/sample_stream?text=${encodeURIComponent(text.slice(0, 50))}`;
+      // Dev / unconfigured mode: do not generate audio and do not return fake URLs
+      return null;
     }
 
     try {
@@ -354,17 +365,38 @@ ${userMessage}`;
         },
         body: JSON.stringify({
           text,
-          model: 's2.1-pro',
+          format: 'mp3',
         }),
       });
 
-      if (res.ok) {
-        return `https://api.fish.audio/v1/tts/stream?session=${Date.now()}`;
+      if (!res.ok) {
+        console.warn(`Fish Audio TTS request failed with HTTP ${res.status}: ${await res.text().catch(() => '')}`);
+        return null;
       }
+
+      // NOTE: Audio files in public/audio/ will accumulate continuously over time.
+      // Followup task: Implement an automated cleanup strategy/retention policy (e.g. cron job or TTL-based purging for stale audio files).
+      const audioDir = path.join(process.cwd(), 'public', 'audio');
+      await fs.promises.mkdir(audioDir, { recursive: true });
+
+      const fileId = randomUUID();
+      const filename = `${fileId}.mp3`;
+      const filePath = path.join(audioDir, filename);
+
+      // Stream response body to disk
+      if (res.body) {
+        await pipeline(Readable.fromWeb(res.body as any), fs.createWriteStream(filePath));
+      } else {
+        const buffer = Buffer.from(await res.arrayBuffer());
+        await fs.promises.writeFile(filePath, buffer);
+      }
+
+      const audioPath = `/public/audio/${filename}`;
+      return baseUrl ? `${baseUrl.replace(/\/+$/, '')}${audioPath}` : audioPath;
     } catch (err) {
       console.warn('Fish audio request failed:', err);
+      return null;
     }
-    return null;
   }
 
   /**
