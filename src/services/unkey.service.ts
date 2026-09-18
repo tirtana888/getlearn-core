@@ -12,8 +12,8 @@ export class UnkeyService {
   }
 
   async verify(apiKey: string): Promise<{ valid: boolean; tenantId?: string; error?: string }> {
-    // 1. Configured default / testing key
-    if (config.devApiKey && apiKey === config.devApiKey) {
+    // 1. Configured dev/testing key (strictly disallowed in production; requires explicit config)
+    if (config.nodeEnv !== 'production' && config.devApiKey && apiKey === config.devApiKey) {
       // Ensure default tenant exists
       const devTenant = await prisma.tenant.upsert({
         where: { id: 'ten_dev_nusadaya' },

@@ -479,7 +479,7 @@
         id="apiKeyInput"
         class="input-key"
         placeholder="Bearer API Key"
-        value="dev-nusadaya-key"
+        value=""
       />
       <button class="btn" onclick="fetchDashboardData()">
         <span>Refresh</span>
@@ -700,8 +700,17 @@
   <script>
     let currentSessionId = null;
 
+    const apiKeyEl = document.getElementById('apiKeyInput');
+    const savedApiKey = localStorage.getItem('getlearn_api_key') || '';
+    if (savedApiKey) {
+      apiKeyEl.value = savedApiKey;
+    }
+    apiKeyEl.addEventListener('input', (e) => {
+      localStorage.setItem('getlearn_api_key', e.target.value.trim());
+    });
+
     function getApiKey() {
-      return document.getElementById('apiKeyInput').value.trim();
+      return apiKeyEl.value.trim();
     }
 
     function switchTab(tabId) {
@@ -1055,7 +1064,9 @@
     }
 
     // Initial load
-    fetchDashboardData();
+    if (getApiKey()) {
+      fetchDashboardData();
+    }
   </script>
 </body>
 </html>

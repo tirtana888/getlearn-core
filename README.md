@@ -51,7 +51,7 @@ npm install
 PORT=3000
 NODE_ENV=development
 DATABASE_URL="postgresql://user:pass@host:port/dbname"
-DEV_API_KEY="dev-nusadaya-key"
+DEV_API_KEY="<generate-nilai-acak-sendiri>"
 ```
 
 ### 4. Sinkronisasi Database
