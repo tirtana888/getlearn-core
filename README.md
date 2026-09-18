@@ -13,6 +13,12 @@
 - **Kalkulasi Mastery & Bayesian Knowledge Tracing**: Estimasi penguasaan konsep real-time, deteksi skill gap, dan rekomendasi konten remedial via pgvector cosine search.
 - **Official Python SDK (`getlearn-ai`)**: Zero external dependencies, typed model data, dan konektor siap pakai untuk Frappe LMS (`doc_events` hooks).
 - **AI Study Coach & Chat Engine**: Pembukaan sesi otomatis berbasis kelemahan siswa, Socratic guardrails pencegah kebocoran kunci jawaban, lesson citations, dan dukungan audio TTS voice.
+- **Multimodal Content Ingestion & Indexing Pipeline**:
+  - `pdf`: Diunduh via `fetch` dan diunggah ke Gemini Files API (`ai.files.upload`), diekstrak teks terstrukturnya (termasuk tabel/grafik) via `generateContent`, lalu di-chunk dan di-embed ke `content_chunks` (pgvector).
+  - `video` (YouTube): URL publik `youtube.com`/`youtu.be` dikirim langsung sebagai `fileData.fileUri` ke Gemini tanpa unduh, diekstrak transkrip dan poin pembelajarannya secara otomatis.
+  - `video` (Self-hosted): Video langsung diunduh dan diunggah ke Gemini Files API untuk ekstraksi multimodal.
+  - `scorm`: **Pembagian Tanggung Jawab (Separation of Concerns)** — Paket SCORM diproses dan diekstrak di sisi LMS connector (misalnya fork Frappe LMS Nusadaya), bukan di getlearn-core. LMS connector mengirimkan `raw_text` hasil ekstraksi ke `POST /v1/content-items`.
+  - **Asynchronous Background Indexing**: Registrasi materi dengan `source_uri` merespons secara instan dengan `indexing_status: pending`, sementara proses ekstraksi Gemini berjalan di background secara non-blocking dan dapat di-poll statusnya via `GET /v1/content-items/:id`.
 - **Web Frontend Dashboards**:
   - **Client Portal** (`/dashboard`): Analitik penguasaan kurikulum, daftar siswa & intervensi targeted, sandbox chat Socratic coach, dan vector RAG explorer.
   - **Superadmin Control Plane** (`/superadmin`): Observabilitas fleet tenant, instant provisioning, dan credit top-up.

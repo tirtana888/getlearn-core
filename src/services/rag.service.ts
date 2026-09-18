@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { ContentType } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 
 export class RagService {
@@ -148,6 +149,208 @@ export class RagService {
       chunkText: r.chunk_text,
       similarity: parseFloat(r.similarity),
     }));
+  }
+
+  /**
+   * Extract text from multimodal source_uri (PDF or Video) via Gemini
+   */
+  async extractTextFromSource(type: ContentType, sourceUri: string): Promise<string> {
+    if (type === ContentType.scorm) {
+      // SCORM package parsing is handled on the LMS connector side (e.g. Nusadaya LMS fork).
+      // getlearn-core does not scrape SCORM packages directly; connectors must supply raw_text.
+      throw new Error('SCORM content extraction is handled on the LMS connector side. Please provide raw_text directly.');
+    }
+
+    if (type === ContentType.text) {
+      return '';
+    }
+
+    if (!sourceUri || !sourceUri.trim()) {
+      throw new Error('Source URI is empty or invalid.');
+    }
+
+    if (!this.ai) {
+      throw new Error('GEMINI_API_KEY is not configured on the server. Multimodal extraction requires Gemini.');
+    }
+
+    if (type === ContentType.pdf) {
+      return this.extractFromPdf(sourceUri);
+    }
+
+    if (type === ContentType.video) {
+      return this.extractFromVideo(sourceUri);
+    }
+
+    throw new Error(`Unsupported content type for extraction: ${type}`);
+  }
+
+  private async extractFromPdf(sourceUri: string): Promise<string> {
+    // 1. Fetch PDF binary from sourceUri
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    let res: Response;
+    try {
+      res = await fetch(sourceUri, { signal: controller.signal });
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error(`Network timeout fetching PDF from ${sourceUri} (exceeded 60s)`);
+      }
+      throw new Error(`Failed to fetch PDF from ${sourceUri}: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status} ${res.statusText} fetching PDF from ${sourceUri}`);
+    }
+
+    const blob = await res.blob();
+    if (blob.size === 0) {
+      throw new Error(`Fetched PDF from ${sourceUri} is empty (0 bytes)`);
+    }
+
+    // 2. Upload to Gemini Files API
+    let uploadedFile = await this.ai!.files.upload({
+      file: blob,
+      config: {
+        mimeType: 'application/pdf',
+      },
+    });
+
+    try {
+      // Poll if processing
+      let attempts = 0;
+      while (uploadedFile.state === 'PROCESSING' && attempts < 30) {
+        await new Promise((r) => setTimeout(r, 1500));
+        uploadedFile = await this.ai!.files.get({ name: uploadedFile.name! });
+        attempts++;
+      }
+
+      if (uploadedFile.state === 'FAILED') {
+        const msg = (uploadedFile as any).error?.message || 'unknown error';
+        throw new Error(`Gemini File processing failed for PDF: ${msg}`);
+      }
+
+      // 3. Generate structured text extraction
+      const response = await this.ai!.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            fileData: {
+              fileUri: uploadedFile.uri,
+              mimeType: uploadedFile.mimeType || 'application/pdf',
+            },
+          },
+          {
+            text: 'Ekstrak seluruh konten teks dari dokumen ini secara lengkap dan akurat. Pertahankan struktur dokumen termasuk judul, subjudul, paragraf, daftar, dan tabel. Jangan membuat ringkasan, ekstrak teks aslinya secara utuh untuk materi pembelajaran.',
+          },
+        ],
+      });
+
+      const extracted = response.text?.trim() || '';
+      if (!extracted) {
+        throw new Error('Gemini extracted empty text from PDF document');
+      }
+      return extracted;
+    } finally {
+      // Clean up uploaded file on Gemini
+      if (uploadedFile?.name) {
+        this.ai!.files.delete({ name: uploadedFile.name }).catch(() => {});
+      }
+    }
+  }
+
+  private async extractFromVideo(sourceUri: string): Promise<string> {
+    const isYouTube = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)/i.test(sourceUri);
+
+    if (isYouTube) {
+      // Public YouTube videos are natively supported by Gemini via fileData.fileUri without downloading
+      const response = await this.ai!.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            fileData: {
+              fileUri: sourceUri,
+            },
+          },
+          {
+            text: 'Transkripsikan dan ekstrak seluruh isi materi penjelasan, konsep penting, rumus, dan instruksi dari video pembelajaran ini secara detail, mendalam, dan terstruktur.',
+          },
+        ],
+      });
+
+      const extracted = response.text?.trim() || '';
+      if (!extracted) {
+        throw new Error('Gemini extracted empty text from YouTube video');
+      }
+      return extracted;
+    }
+
+    // Direct / self-hosted video: fetch and upload to Gemini Files API
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout
+    let res: Response;
+    try {
+      res = await fetch(sourceUri, { signal: controller.signal });
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error(`Network timeout fetching video from ${sourceUri} (exceeded 120s)`);
+      }
+      throw new Error(`Failed to fetch video from ${sourceUri}: ${err.message}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status} ${res.statusText} fetching video from ${sourceUri}`);
+    }
+
+    const blob = await res.blob();
+    const mimeType = res.headers.get('content-type') || 'video/mp4';
+
+    let uploadedFile = await this.ai!.files.upload({
+      file: blob,
+      config: { mimeType },
+    });
+
+    try {
+      let attempts = 0;
+      while (uploadedFile.state === 'PROCESSING' && attempts < 40) {
+        await new Promise((r) => setTimeout(r, 2000));
+        uploadedFile = await this.ai!.files.get({ name: uploadedFile.name! });
+        attempts++;
+      }
+
+      if (uploadedFile.state === 'FAILED') {
+        const msg = (uploadedFile as any).error?.message || 'unknown error';
+        throw new Error(`Gemini File processing failed for video: ${msg}`);
+      }
+
+      const response = await this.ai!.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            fileData: {
+              fileUri: uploadedFile.uri,
+              mimeType: uploadedFile.mimeType || mimeType,
+            },
+          },
+          {
+            text: 'Transkripsikan dan ekstrak seluruh isi materi penjelasan, konsep penting, dan instruksi dari video pembelajaran ini secara terstruktur.',
+          },
+        ],
+      });
+
+      const extracted = response.text?.trim() || '';
+      if (!extracted) {
+        throw new Error('Gemini extracted empty text from video file');
+      }
+      return extracted;
+    } finally {
+      if (uploadedFile?.name) {
+        this.ai!.files.delete({ name: uploadedFile.name }).catch(() => {});
+      }
+    }
   }
 
   /**

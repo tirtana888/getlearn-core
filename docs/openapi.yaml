@@ -70,6 +70,51 @@ paths:
                 $ref: '#/components/schemas/ContentItem'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+    get:
+      summary: List Content Items
+      description: Returns all content items registered for this tenant along with indexing status.
+      operationId: listContentItems
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of content items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content_items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContentItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/content-items/{id}:
+    get:
+      summary: Get Content Item Details & Indexing Status
+      description: Returns details of a specific content item including its RAG indexing status and error logs if any.
+      operationId: getContentItem
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Content item found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
 
   /v1/content-items/search:
     post:
@@ -599,6 +644,23 @@ components:
           properties:
             tenant_id:
               type: string
+            indexing_status:
+              type: string
+              enum: [pending, completed, failed, skipped]
+              example: completed
+            indexing_error:
+              type: string
+              nullable: true
+              example: null
+            chunks_indexed:
+              type: integer
+              example: 4
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
 
     AssessmentItemInput:
       type: object
