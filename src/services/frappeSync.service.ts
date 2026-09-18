@@ -30,7 +30,12 @@ interface FrappeLessonDoc {
   title: string;
 }
 
+interface FrappeEnrollmentRow {
+  member: string;
+}
+
 export interface SyncResult {
+  learnersRegistered: number;
   submissionsSeen: number;
   eventsIngested: number;
   errors: number;
@@ -59,12 +64,23 @@ export class FrappeSyncService {
   async syncTenant(tenantId: string): Promise<SyncResult> {
     const connection = await prisma.frappeConnection.findUnique({ where: { tenantId } });
     if (!connection || !connection.enabled) {
-      return { submissionsSeen: 0, eventsIngested: 0, errors: 0 };
+      return { learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
     }
 
     const since = connection.lastSyncedAt ?? new Date(0);
-    const result: SyncResult = { submissionsSeen: 0, eventsIngested: 0, errors: 0 };
+    const result: SyncResult = { learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
     let latestCreation = since;
+
+    // Register every enrolled student up front, not just whoever happens to have a quiz
+    // submission - otherwise a student who's only watched lessons/SCORM never shows up
+    // in getlearn at all. Small school (tens of users) for now, so a full pull every
+    // cycle is fine; revisit with a watermark if this ever needs to scale to thousands.
+    try {
+      result.learnersRegistered = await this.syncAllStudents(tenantId, connection.baseUrl, connection.apiKey, connection.apiSecret);
+    } catch (err: any) {
+      result.errors++;
+      await this.recordError(tenantId, `student roster pull failed: ${err.message || err}`);
+    }
 
     // Lesson-as-objective is the level of granularity we ship with: quiz.lesson
     // already exists in Frappe today, so mastery works with zero new fields or
@@ -163,6 +179,44 @@ export class FrappeSyncService {
     }
 
     return result;
+  }
+
+  /**
+   * Pulls every LMS Enrollment with member_type "Student", dedupes to distinct
+   * members, and upserts a Learner for each - so a student shows up in getlearn
+   * as soon as they enroll, whether or not they've touched a quiz yet.
+   */
+  private async syncAllStudents(
+    tenantId: string,
+    baseUrl: string,
+    apiKey: string,
+    apiSecret: string
+  ): Promise<number> {
+    const filters = encodeURIComponent(JSON.stringify([['member_type', '=', 'Student']]));
+    const fields = encodeURIComponent(JSON.stringify(['member']));
+    const url =
+      `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent('LMS Enrollment')}` +
+      `?filters=${filters}&fields=${fields}&limit_page_length=0`;
+
+    const res = await fetch(url, { headers: { Authorization: this.authHeader(apiKey, apiSecret) } });
+    if (!res.ok) {
+      throw new Error(`Frappe API error ${res.status} listing LMS Enrollment: ${await res.text()}`);
+    }
+    const data: any = await res.json();
+    const rows: FrappeEnrollmentRow[] = data.data || [];
+
+    const distinctMembers = new Set(rows.map((r) => r.member).filter(Boolean));
+
+    for (const member of distinctMembers) {
+      const learnerId = this.anonymizeLearnerId(member);
+      await prisma.learner.upsert({
+        where: { tenantId_externalRef: { tenantId, externalRef: learnerId } },
+        update: {},
+        create: { tenantId, externalRef: learnerId },
+      });
+    }
+
+    return distinctMembers.size;
   }
 
   /**

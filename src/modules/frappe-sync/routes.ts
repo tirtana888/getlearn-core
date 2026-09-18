@@ -72,6 +72,7 @@ export async function frappeSyncRoutes(app: FastifyInstance) {
   app.post('/v1/frappe-sync/trigger', async (req, reply) => {
     const result = await frappeSyncService.syncTenant(req.tenantId);
     return reply.status(200).send({
+      learners_registered: result.learnersRegistered,
       submissions_seen: result.submissionsSeen,
       events_ingested: result.eventsIngested,
       errors: result.errors,

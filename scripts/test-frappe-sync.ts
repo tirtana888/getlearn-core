@@ -52,11 +52,21 @@ async function main() {
   const fakeQuiz = { name: fakeSubmission.quiz, title: 'Front Office Quiz', lesson: 'lesson-front-office-intro' };
   const fakeLesson = { name: fakeQuiz.lesson, title: 'Pengenalan Front Office' };
 
+  // 3 distinct enrolled students, only 1 of whom (the quiz-taker) has any quiz activity -
+  // this is exactly the "5 learners when there should be more" scenario from production.
+  const fakeEnrollments = [
+    { member: fakeSubmission.member },
+    { member: 'siswa.lain1@nusadayaacademy.com' },
+    { member: 'siswa.lain2@nusadayaacademy.com' },
+    { member: fakeSubmission.member }, // duplicate (2nd course enrollment) - must be deduped
+  ];
+
   const realFetch = global.fetch;
   let listCalled = false;
   let detailCalled = false;
   let quizCalled = false;
   let lessonCalled = false;
+  let enrollmentCalled = false;
 
   global.fetch = (async (url: string, init?: any) => {
     const authHeader = init?.headers?.Authorization;
@@ -66,6 +76,12 @@ async function main() {
     }
 
     const decoded = decodeURIComponent(url);
+
+    if (decoded.includes('/api/resource/LMS Enrollment?')) {
+      enrollmentCalled = true;
+      console.log(`[mock fetch:enrollment] -> ${fakeEnrollments.length} row(s) (with a duplicate member)`);
+      return new Response(JSON.stringify({ data: fakeEnrollments }), { status: 200 });
+    }
 
     if (decoded.includes('/api/resource/LMS Quiz Submission?')) {
       listCalled = true;
@@ -128,7 +144,17 @@ async function main() {
         })
       : null;
 
+    const noQuizLearner1 = await prisma.learner.findUnique({
+      where: { tenantId_externalRef: { tenantId, externalRef: frappeSyncService.anonymizeLearnerId('siswa.lain1@nusadayaacademy.com') } },
+    });
+    const noQuizLearner2 = await prisma.learner.findUnique({
+      where: { tenantId_externalRef: { tenantId, externalRef: frappeSyncService.anonymizeLearnerId('siswa.lain2@nusadayaacademy.com') } },
+    });
+
     const checks = [
+      { name: 'enrollment endpoint called', pass: enrollmentCalled },
+      { name: 'result.learnersRegistered === 3 (deduped from 4 rows)', pass: result.learnersRegistered === 3 },
+      { name: 'student with zero quiz activity still registered as a learner', pass: Boolean(noQuizLearner1) && Boolean(noQuizLearner2) },
       { name: 'list endpoint called', pass: listCalled },
       { name: 'detail endpoint called', pass: detailCalled },
       { name: 'quiz endpoint called (lesson lookup)', pass: quizCalled },
@@ -206,6 +232,17 @@ async function main() {
     await prisma.masteryRecord.deleteMany({ where: { tenantId, objectiveId: fakeLesson.name } });
     await prisma.assessmentItem.deleteMany({ where: { tenantId, id: { in: ['q_front_office_01', 'q_housekeeping_01'] } } });
     await prisma.learningObjective.deleteMany({ where: { tenantId, id: fakeLesson.name } });
+    await prisma.learner.deleteMany({
+      where: {
+        tenantId,
+        externalRef: {
+          in: [
+            frappeSyncService.anonymizeLearnerId('siswa.lain1@nusadayaacademy.com'),
+            frappeSyncService.anonymizeLearnerId('siswa.lain2@nusadayaacademy.com'),
+          ],
+        },
+      },
+    });
     await prisma.frappeConnection.delete({ where: { tenantId } }).catch(() => {});
   }
 }
