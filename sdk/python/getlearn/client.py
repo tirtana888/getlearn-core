@@ -281,3 +281,46 @@ class GetLearnClient:
             reason_objective_id=data["reason_objective_id"],
             explanation=data["explanation"],
         )
+
+    # =========================================================================
+    # AI Study Coach Chat Endpoints
+    # =========================================================================
+
+    def start_chat_session(
+        self,
+        learner_id: str,
+        scope: str = "objective",
+        objective_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Start a new AI Study Coach session."""
+        return self._request(
+            "POST",
+            "/v1/chat/sessions",
+            payload={
+                "learner_id": learner_id,
+                "scope": scope,
+                "objective_ids": objective_ids or [],
+            },
+        )
+
+    def send_chat_message(
+        self,
+        session_id: str,
+        message: str,
+        is_assessment_active: bool = False,
+        voice: bool = False,
+    ) -> Dict[str, Any]:
+        """Send a message to the AI Study Coach and get Socratic guidance."""
+        return self._request(
+            "POST",
+            f"/v1/chat/sessions/{session_id}/messages",
+            payload={
+                "message": message,
+                "is_assessment_active": is_assessment_active,
+            },
+            params={"voice": "true" if voice else None},
+        )
+
+    def get_chat_session(self, session_id: str) -> Dict[str, Any]:
+        """Retrieve full conversation history for a chat session."""
+        return self._request("GET", f"/v1/chat/sessions/{session_id}")

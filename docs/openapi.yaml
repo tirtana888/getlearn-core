@@ -273,6 +273,179 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
 
+  /v1/chat/sessions:
+    post:
+      summary: Start AI Study Coach Session
+      description: |
+        Initializes a conversational study coach session for a learner.
+        Automatically checks the learner's weakest mastery record within the specified scope
+        and crafts an opening message offering guidance.
+      operationId: startChatSession
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - learner_id
+              properties:
+                learner_id:
+                  type: string
+                  example: usr_frappe_883
+                scope:
+                  type: string
+                  enum: [objective, learner]
+                  default: objective
+                objective_ids:
+                  type: array
+                  items:
+                    type: string
+                  example: [obj_fraction_add]
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  learner_id:
+                    type: string
+                  scope:
+                    type: string
+                  title:
+                    type: string
+                  opening_message:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/chat/sessions/{id}/messages:
+    post:
+      summary: Send Message to AI Study Coach
+      description: |
+        Sends a user message to the coach. Uses pgvector retrieval to locate relevant lesson chunks.
+        Applies Socratic guardrails: does not give away direct answers if the learner is working on an active assessment.
+        Cites source content IDs in the response.
+      operationId: sendChatMessage
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: voice
+          in: query
+          required: false
+          description: If true, synthesizes response speech via Fish Audio TTS
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  example: Bagaimana cara mencari KPK penyebut 2 dan 4?
+                is_assessment_active:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Assistant reply
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message_id:
+                    type: string
+                  session_id:
+                    type: string
+                  sender:
+                    type: string
+                  content:
+                    type: string
+                  source_content_ids:
+                    type: array
+                    items:
+                      type: string
+                  audio_url:
+                    type: string
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/chat/sessions/{id}:
+    get:
+      summary: Get Chat Session History
+      description: Retrieves the session details and full history of chat messages.
+      operationId: getChatSession
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chat history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  learner_id:
+                    type: string
+                  scope:
+                    type: string
+                  title:
+                    type: string
+                  created_at:
+                    type: string
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        sender:
+                          type: string
+                        content:
+                          type: string
+                        source_content_ids:
+                          type: array
+                          items:
+                            type: string
+                        audio_url:
+                          type: string
+                          nullable: true
+                        created_at:
+                          type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /v1/admin/tenants:
     post:
       summary: Provision Tenant

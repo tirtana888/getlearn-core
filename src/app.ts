@@ -8,6 +8,7 @@ import { assessmentItemRoutes } from './modules/assessment-items/routes.js';
 import { eventRoutes } from './modules/events/routes.js';
 import { learnerRoutes } from './modules/learners/routes.js';
 import { adminRoutes } from './modules/admin/routes.js';
+import { chatRoutes } from './modules/chat/routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -69,6 +70,7 @@ export async function buildApp() {
   await app.register(assessmentItemRoutes);
   await app.register(eventRoutes);
   await app.register(learnerRoutes);
+  await app.register(chatRoutes);
 
   // Global Error Handler
   app.setErrorHandler((error, request, reply) => {

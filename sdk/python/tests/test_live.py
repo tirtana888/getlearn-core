@@ -106,6 +106,41 @@ def main():
     print(f"    [OK] Re-sent event status: {dup_res.status}")
     assert dup_res.status == "duplicate_ignored"
 
+    # 10. AI Study Coach Chat Session
+    print("[10] Testing AI Study Coach Chat Engine...")
+    session = client.start_chat_session(
+        learner_id=learner_id,
+        scope="objective",
+        objective_ids=["obj_py_geom_01"],
+    )
+    session_id = session["session_id"]
+    print(f"    [OK] Chat session started: {session_id}")
+    print(f"    [OPENING] {session['opening_message'][:90]}...")
+    assert "session_id" in session
+
+    # 11. Send Question with Voice
+    print("[11] Sending Learner Question (with voice=True)...")
+    chat_reply = client.send_chat_message(
+        session_id=session_id,
+        message="Bagaimana rumus menghitung luas lingkaran?",
+        is_assessment_active=False,
+        voice=True,
+    )
+    print(f"    [REPLY] {chat_reply['content'][:100]}...")
+    if chat_reply.get("audio_url"):
+        print(f"    [VOICE] Audio stream available: {chat_reply['audio_url'][:40]}...")
+    assert chat_reply["sender"] == "assistant"
+
+    # 12. Send Active Assessment Question (Socratic Guardrail)
+    print("[12] Testing Socratic Guardrail during active assessment...")
+    socratic_reply = client.send_chat_message(
+        session_id=session_id,
+        message="Berapa jawaban langsung untuk soal jari-jari 7 cm?",
+        is_assessment_active=True,
+    )
+    print(f"    [SOCRATIC] {socratic_reply['content'][:100]}...")
+    assert socratic_reply["sender"] == "assistant"
+
     print("\n>>> ALL PYTHON SDK LIVE TESTS PASSED SUCCESSFULLY! <<<\n")
 
 if __name__ == "__main__":

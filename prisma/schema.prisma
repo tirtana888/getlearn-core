@@ -21,6 +21,7 @@ model Tenant {
   assessmentEvents AssessmentEvent[]
   masteryRecords   MasteryRecord[]
   contentChunks    ContentChunk[]
+  chatSessions     ChatSession[]
 
   @@map("tenants")
 }
@@ -35,6 +36,7 @@ model Learner {
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assessmentEvents AssessmentEvent[]
   masteryRecords   MasteryRecord[]
+  chatSessions     ChatSession[]
 
   @@unique([tenantId, externalRef])
   @@index([tenantId])
@@ -157,4 +159,47 @@ model MasteryRecord {
   @@unique([tenantId, learnerId, objectiveId])
   @@index([tenantId, learnerId])
   @@map("mastery_records")
+}
+
+enum ChatScope {
+  objective
+  learner
+}
+
+enum ChatSender {
+  user
+  assistant
+}
+
+model ChatSession {
+  id           String      @id @default(uuid())
+  tenantId     String      @map("tenant_id")
+  learnerId    String      @map("learner_id")
+  scope        ChatScope
+  objectiveIds String[]    @map("objective_ids") // For objective-scoped sessions
+  title        String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  learner  Learner       @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([tenantId, learnerId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id               String     @id @default(uuid())
+  sessionId        String     @map("session_id")
+  sender           ChatSender
+  content          String     @db.Text
+  sourceContentIds String[]   @map("source_content_ids") // Badges / lesson citations
+  audioUrl         String?    @map("audio_url") // Fish Audio TTS URL if voice requested
+  createdAt        DateTime   @default(now()) @map("created_at")
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("chat_messages")
 }
