@@ -32,8 +32,8 @@ async function runE2ETests() {
     if (objRes.statusCode !== 200) throw new Error(`Objective registration failed: ${objRes.body}`);
     console.log('   ✅ Objective registered:', objRes.json().id);
 
-    // 3. Register Content Item
-    console.log('3️⃣ Registering Content Item (POST /v1/content-items)...');
+    // 3. Register Content Item with raw_text for RAG chunking
+    console.log('3️⃣ Registering Content Item with RAG chunking (POST /v1/content-items)...');
     const contentRes = await app.inject({
       method: 'POST',
       url: '/v1/content-items',
@@ -42,11 +42,32 @@ async function runE2ETests() {
         id: 'lesson_frac_intro',
         type: 'text',
         source_uri: 'https://nusadaya.academy/lessons/pecahan-dasar',
+        raw_text: 'Untuk menjumlahkan pecahan dengan penyebut berbeda, samakan terlebih dahulu penyebutnya dengan mencari Kelipatan Persekutuan Terkecil (KPK). Contoh: 1/2 + 1/4 = 2/4 + 1/4 = 3/4.',
         objective_ids: ['obj_fraction_add'],
       },
     });
     if (contentRes.statusCode !== 200) throw new Error(`Content registration failed: ${contentRes.body}`);
-    console.log('   ✅ Content item registered:', contentRes.json().id);
+    const contentJson = contentRes.json();
+    console.log(`   ✅ Content item registered: ${contentJson.id} (Chunks indexed: ${contentJson.chunks_indexed})`);
+    if (contentJson.chunks_indexed < 1) throw new Error('Expected at least 1 chunk to be indexed');
+
+    // 3b. Test pgvector Semantic Search
+    console.log('3️⃣b Testing pgvector Semantic Search (POST /v1/content-items/search)...');
+    const searchRes = await app.inject({
+      method: 'POST',
+      url: '/v1/content-items/search',
+      headers: authHeader,
+      payload: {
+        query: 'cara menjumlahkan pecahan penyebut beda KPK',
+        limit: 3,
+      },
+    });
+    if (searchRes.statusCode !== 200) throw new Error(`Semantic search failed: ${searchRes.body}`);
+    const searchJson = searchRes.json();
+    console.log(`   ✅ Semantic matches found: ${searchJson.results.length}, top similarity: ${searchJson.results[0]?.similarity}`);
+    if (searchJson.results.length === 0 || searchJson.results[0].content_item_id !== 'lesson_frac_intro') {
+      throw new Error(`Expected matching chunk from lesson_frac_intro, got: ${JSON.stringify(searchJson)}`);
+    }
 
     // 4. Register Assessment Item
     console.log('4️⃣ Registering Assessment Item (POST /v1/assessment-items)...');
@@ -65,8 +86,8 @@ async function runE2ETests() {
     console.log('   ✅ Assessment item registered:', itemRes.json().id);
 
     // 5. Ingest First Event (Correct Answer)
-    const learnerExternalId = 'usr_frappe_test_01';
-    console.log('5️⃣ Ingesting 1st Assessment Event (Correct answer)...');
+    const learnerExternalId = `usr_test_${Date.now()}`;
+    console.log(`5️⃣ Ingesting 1st Assessment Event (Correct answer) for ${learnerExternalId}...`);
     const evt1Res = await app.inject({
       method: 'POST',
       url: '/v1/events',

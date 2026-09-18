@@ -20,6 +20,7 @@ model Tenant {
   assessmentItems  AssessmentItem[]
   assessmentEvents AssessmentEvent[]
   masteryRecords   MasteryRecord[]
+  contentChunks    ContentChunk[]
 
   @@map("tenants")
 }
@@ -64,19 +65,37 @@ enum ContentType {
 }
 
 model ContentItem {
-  id           String      @id // canonical ID (e.g. lesson_123)
-  tenantId     String      @map("tenant_id")
+  id           String         @id // canonical ID (e.g. lesson_123)
+  tenantId     String         @map("tenant_id")
   type         ContentType
-  sourceUri    String?     @map("source_uri")
-  objectiveIds String[]    @map("objective_ids") // List of LearningObjective IDs
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
+  sourceUri    String?        @map("source_uri")
+  rawText      String?        @map("raw_text") @db.Text
+  objectiveIds String[]       @map("objective_ids") // List of LearningObjective IDs
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chunks ContentChunk[]
 
   @@unique([tenantId, id])
   @@index([tenantId])
   @@map("content_items")
+}
+
+model ContentChunk {
+  id            String                      @id @default(uuid())
+  tenantId      String                      @map("tenant_id")
+  contentItemId String                      @map("content_item_id")
+  chunkIndex    Int                         @map("chunk_index")
+  chunkText     String                      @map("chunk_text") @db.Text
+  embedding     Unsupported("vector(768)")?
+  createdAt     DateTime                    @default(now()) @map("created_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, contentItemId])
+  @@map("content_chunks")
 }
 
 enum AssessmentType {

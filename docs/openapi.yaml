@@ -71,6 +71,58 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
 
+  /v1/content-items/search:
+    post:
+      summary: Semantic Search Content Chunks
+      description: Searches instructional content chunks using pgvector cosine similarity.
+      operationId: searchContentChunks
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  example: Cara menghitung luas lingkaran
+                limit:
+                  type: integer
+                  default: 5
+                  maximum: 20
+      responses:
+        '200':
+          description: Matching content chunks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        chunk_id:
+                          type: string
+                        content_item_id:
+                          type: string
+                        chunk_index:
+                          type: integer
+                        chunk_text:
+                          type: string
+                        similarity:
+                          type: number
+                          format: float
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
   /v1/assessment-items:
     post:
       summary: Upsert Assessment Item

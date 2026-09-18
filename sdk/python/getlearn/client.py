@@ -129,6 +129,7 @@ class GetLearnClient:
         type: str,
         objective_ids: List[str],
         source_uri: Optional[str] = None,
+        raw_text: Optional[str] = None,
     ) -> ContentItem:
         """Register or update instructional content (text, video, pdf, scorm)."""
         data = self._request(
@@ -139,6 +140,7 @@ class GetLearnClient:
                 "type": type,
                 "objective_ids": objective_ids,
                 "source_uri": source_uri,
+                "raw_text": raw_text,
             },
         )
         return ContentItem(
@@ -148,6 +150,19 @@ class GetLearnClient:
             tenant_id=data.get("tenant_id", ""),
             source_uri=data.get("source_uri"),
         )
+
+    def search_content(
+        self,
+        query: str,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Semantic search over instructional content chunks using pgvector."""
+        data = self._request(
+            "POST",
+            "/v1/content-items/search",
+            payload={"query": query, "limit": limit},
+        )
+        return data.get("results", [])
 
     def register_assessment_item(
         self,

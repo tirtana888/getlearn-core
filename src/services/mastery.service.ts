@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.js';
+import { ragService } from './rag.service.js';
 
 export class MasteryService {
   /**
@@ -116,20 +117,30 @@ export class MasteryService {
     const gap = masteryRecords.find((r) => r.score < 0.7);
 
     if (gap) {
-      // Find content item covering this gap
-      const content = await prisma.contentItem.findFirst({
-        where: {
-          tenantId,
-          objectiveIds: { has: gap.objectiveId },
-        },
-      });
+      // Find content item or semantically matching chunk covering this gap
+      let targetId = gap.objectiveId;
+      let excerpt = '';
+
+      const similarChunks = await ragService.searchSimilarChunks(tenantId, gap.objective.label, 1);
+      if (similarChunks.length > 0) {
+        targetId = similarChunks[0].contentItemId;
+        excerpt = similarChunks[0].chunkText;
+      } else {
+        const content = await prisma.contentItem.findFirst({
+          where: {
+            tenantId,
+            objectiveIds: { has: gap.objectiveId },
+          },
+        });
+        if (content) targetId = content.id;
+      }
 
       return {
         learner_id: learnerId,
         action: 'review',
-        target_id: content?.id || gap.objectiveId,
+        target_id: targetId,
         reason_objective_id: gap.objectiveId,
-        explanation: `Skor penguasaan pada "${gap.objective.label}" adalah ${(gap.score * 100).toFixed(0)}% (di bawah batas 70%). Dianjurkan mengulang materi review.`,
+        explanation: `Skor penguasaan pada "${gap.objective.label}" adalah ${(gap.score * 100).toFixed(0)}% (di bawah batas 70%). Dianjurkan mengulang materi review.${excerpt ? ` Rekomendasi bagian materi: "${excerpt.slice(0, 120)}..."` : ''}`,
       };
     }
 
