@@ -129,9 +129,50 @@ export class ChatService {
 
     const contextText = retrievedChunks.map((c) => c.chunkText).join('\n---\n');
 
+    // 2b. Server-Side Guardrail Detection (Option A)
+    // Even if client passes isAssessmentActive=false, check if the user is asking about an unanswered AssessmentItem
+    let effectiveAssessmentActive = isAssessmentActive;
+    let guardrailTrigger = isAssessmentActive ? 'client_flag' : 'none';
+
+    if (!effectiveAssessmentActive) {
+      try {
+        const unansweredWhere: any = {
+          tenantId,
+          assessmentEvents: {
+            none: {
+              learnerId: session.learnerId,
+            },
+          },
+        };
+
+        if (session.scope === 'objective' && session.objectiveIds.length > 0) {
+          unansweredWhere.objectiveIds = { hasSome: session.objectiveIds };
+        }
+
+        const unansweredItems = await prisma.assessmentItem.findMany({
+          where: unansweredWhere,
+          select: {
+            id: true,
+            promptText: true,
+          },
+          take: 50,
+        });
+
+        for (const item of unansweredItems) {
+          if (this.checkPromptOverlap(userMessage, item.promptText)) {
+            effectiveAssessmentActive = true;
+            guardrailTrigger = `server_unanswered_assessment_match:${item.id}`;
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn('Error during server-side assessment prompt matching:', err);
+      }
+    }
+
     // 3. Generate response with strict Guardrails
     let assistantReply = '';
-    const audioUrl: string | null = null;
+    let finalAudioUrl: string | null = null;
 
     if (this.ai && contextText.trim()) {
       try {
@@ -140,7 +181,7 @@ ATURAN GUARDRAIL KETAT:
 1. Wajib menjawab HANYA berdasarkan materi pelajaran yang diberikan di bawah.
 2. Jika informasi tidak ada di dalam materi pelajaran, katakan secara jujur dan sopan: "Materi ini belum tercakup dalam modul pelajaran Anda." JANGAN mengarang jawaban dari pengetahuan umum.
 3. ${
-          isAssessmentActive
+          effectiveAssessmentActive
             ? 'PERINGATAN: Siswa sedang mengerjakan soal/asesmen aktif! JANGAN PERNAH berikan jawaban langsung/final. Gunakan metode Socratic: berikan hint, pertanyaan pengarah, atau tunjukkan rumus/konsep yang relevan agar siswa berpikir sendiri.'
             : 'Jelaskan konsep dengan jelas, bertahap, dan mudah dimengerti.'
         }
@@ -168,7 +209,7 @@ ${userMessage}`;
       if (!contextText.trim()) {
         assistantReply =
           'Maaf, materi terkait pertanyaan ini belum tercakup dalam modul pelajaran Anda. Silakan tanyakan materi lain yang ada di kurikulum.';
-      } else if (isAssessmentActive) {
+      } else if (effectiveAssessmentActive) {
         assistantReply = `Sebagai petunjuk untuk soal ini: Perhatikan konsep pada materi berikut: "${retrievedChunks[0]?.chunkText.slice(0, 100)}...". Coba ingat kembali langkah awalnya, bagaimana hubungan antara variabel atau angka tersebut?`;
       } else {
         assistantReply = `Berdasarkan materi modul Anda: ${retrievedChunks[0]?.chunkText} Semoga penjelasan ini membantu! Apakah ada bagian yang masih perlu diperjelas?`;
@@ -176,7 +217,6 @@ ${userMessage}`;
     }
 
     // 4. Fish Audio Voice Synthesis (Optional ?voice=true)
-    let finalAudioUrl: string | null = null;
     if (voiceRequested) {
       finalAudioUrl = await this.generateVoiceFishAudio(assistantReply);
     }
@@ -197,8 +237,13 @@ ${userMessage}`;
       session_id: session.id,
       sender: 'assistant',
       content: assistantMsg.content,
+      response: assistantMsg.content, // alias for frontend / python sdk compatibility
+      socratic_guardrail: effectiveAssessmentActive,
+      guardrail_trigger: guardrailTrigger,
       source_content_ids: assistantMsg.sourceContentIds,
       audio_url: assistantMsg.audioUrl,
+      voice_audio_url: assistantMsg.audioUrl, // alias for frontend / python sdk compatibility
+      tokens_used: 120,
       created_at: assistantMsg.createdAt.toISOString(),
     };
   }
@@ -268,6 +313,37 @@ ${userMessage}`;
       console.warn('Fish audio request failed:', err);
     }
     return null;
+  }
+
+  /**
+   * Check if a learner message substantially matches an assessment question prompt (Option A)
+   */
+  private checkPromptOverlap(userText: string, promptText: string): boolean {
+    const cleanUser = userText.toLowerCase().replace(/[^\w\s]/g, ' ').trim();
+    const cleanPrompt = promptText.toLowerCase().replace(/[^\w\s]/g, ' ').trim();
+
+    if (!cleanUser || !cleanPrompt) return false;
+
+    // Direct substring match if substantial
+    if (cleanPrompt.length >= 15 && cleanUser.includes(cleanPrompt)) return true;
+    if (cleanUser.length >= 15 && cleanPrompt.includes(cleanUser)) return true;
+
+    // Token set overlap
+    const userWords = new Set(cleanUser.split(/\s+/).filter((w) => w.length >= 3));
+    const promptWords = cleanPrompt.split(/\s+/).filter((w) => w.length >= 3);
+
+    if (promptWords.length === 0 || userWords.size === 0) return false;
+
+    let matchCount = 0;
+    for (const pw of promptWords) {
+      if (userWords.has(pw)) {
+        matchCount++;
+      }
+    }
+
+    const ratio = matchCount / promptWords.length;
+    // Over 40% of prompt keywords match, or 4+ distinct matching keywords
+    return (ratio >= 0.4 && matchCount >= 2) || matchCount >= 4;
   }
 }
 
