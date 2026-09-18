@@ -1,0 +1,141 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Tenant {
+  id           String   @id @default(uuid())
+  name         String
+  tokenBalance Int      @default(100000) @map("token_balance")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  learners         Learner[]
+  objectives       LearningObjective[]
+  contentItems     ContentItem[]
+  assessmentItems  AssessmentItem[]
+  assessmentEvents AssessmentEvent[]
+  masteryRecords   MasteryRecord[]
+
+  @@map("tenants")
+}
+
+model Learner {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  externalRef String   @map("external_ref") // Opaque ID from LMS (no PII)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assessmentEvents AssessmentEvent[]
+  masteryRecords   MasteryRecord[]
+
+  @@unique([tenantId, externalRef])
+  @@index([tenantId])
+  @@map("learners")
+}
+
+model LearningObjective {
+  id        String   @id // canonical ID scoped per tenant (e.g. obj_fraction_add)
+  tenantId  String   @map("tenant_id")
+  label     String
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  masteryRecords MasteryRecord[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@map("learning_objectives")
+}
+
+enum ContentType {
+  text
+  video
+  pdf
+  scorm
+}
+
+model ContentItem {
+  id           String      @id // canonical ID (e.g. lesson_123)
+  tenantId     String      @map("tenant_id")
+  type         ContentType
+  sourceUri    String?     @map("source_uri")
+  objectiveIds String[]    @map("objective_ids") // List of LearningObjective IDs
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@map("content_items")
+}
+
+enum AssessmentType {
+  mcq
+  short
+  essay
+}
+
+model AssessmentItem {
+  id           String         @id // canonical ID (e.g. q_2451)
+  tenantId     String         @map("tenant_id")
+  itemType     AssessmentType @map("item_type")
+  promptText   String         @map("prompt_text")
+  objectiveIds String[]       @map("objective_ids") // List of LearningObjective IDs tested
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assessmentEvents AssessmentEvent[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@map("assessment_items")
+}
+
+model AssessmentEvent {
+  id          String   @id // Idempotency key from connector (e.g. evt_quiz_981)
+  tenantId    String   @map("tenant_id")
+  learnerId   String   @map("learner_id")
+  itemId      String   @map("item_id")
+  isCorrect   Boolean  @map("is_correct")
+  rawResponse String?  @map("raw_response")
+  occurredAt  DateTime @map("occurred_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  learner Learner        @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  item    AssessmentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, id])
+  @@index([tenantId, learnerId])
+  @@index([tenantId, itemId])
+  @@map("assessment_events")
+}
+
+model MasteryRecord {
+  id            String   @id @default(uuid())
+  tenantId      String   @map("tenant_id")
+  learnerId     String   @map("learner_id")
+  objectiveId   String   @map("objective_id")
+  score         Float    @default(0.0) // 0.00 to 1.00
+  evidenceCount Int      @default(0) @map("evidence_count")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  learner   Learner           @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  objective LearningObjective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, learnerId, objectiveId])
+  @@index([tenantId, learnerId])
+  @@map("mastery_records")
+}

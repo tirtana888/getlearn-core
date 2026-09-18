@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>getlearn.ai Platform Plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#F7F5F0;
+    --surface:#FFFFFF;
+    --surface-2:#EFECE4;
+    --border:#E0DCD1;
+    --border-strong:#C9C3B4;
+    --ink-1:#14181C;
+    --ink-2:#41474D;
+    --ink-3:#767C76;
+    --primary:#123A5C;
+    --primary-ink:#FFFFFF;
+    --primary-wash:#E7EDF2;
+    --accent:#C97A2B;
+    --accent-ink:#FFFFFF;
+    --accent-wash:#FBEEDD;
+    --good:#1F7A5C;
+    --good-wash:#E4F2EC;
+    --warn:#B3472C;
+    --warn-wash:#F8E7E1;
+    --shadow: 0 1px 2px rgba(20,24,28,.05), 0 10px 28px -16px rgba(20,24,28,.16);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#12161A; --surface:#191E23; --surface-2:#212830; --border:#2C333B; --border-strong:#3B4450;
+      --ink-1:#F1EFE9; --ink-2:#C6CBCE; --ink-3:#8A9297;
+      --primary:#7CA6CE; --primary-ink:#0B1B29; --primary-wash:#1B2A38;
+      --accent:#E3A25C; --accent-ink:#26160A; --accent-wash:#2E2013;
+      --good:#5FC79E; --good-wash:#173028;
+      --warn:#E08066; --warn-wash:#33201B;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 14px 34px -18px rgba(0,0,0,.65);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#12161A; --surface:#191E23; --surface-2:#212830; --border:#2C333B; --border-strong:#3B4450;
+    --ink-1:#F1EFE9; --ink-2:#C6CBCE; --ink-3:#8A9297;
+    --primary:#7CA6CE; --primary-ink:#0B1B29; --primary-wash:#1B2A38;
+    --accent:#E3A25C; --accent-ink:#26160A; --accent-wash:#2E2013;
+    --good:#5FC79E; --good-wash:#173028;
+    --warn:#E08066; --warn-wash:#33201B;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 14px 34px -18px rgba(0,0,0,.65);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink-2);
+    font-family:"IBM Plex Sans", system-ui, sans-serif;
+    font-size:15.5px; line-height:1.6;
+  }
+  .wrap{ max-width:840px; margin:0 auto; padding:48px 20px 96px; }
+  code, .mono{ font-family:"IBM Plex Mono", ui-monospace, monospace; }
+  a{ color:var(--primary); }
+  :root[data-theme="dark"] a, :root:not([data-theme="light"]) a{ color:var(--accent); }
+
+  header.masthead{ margin:0 0 8px; }
+  .eyebrow{ font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin:0 0 14px; }
+  h1{ font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:clamp(32px,6vw,46px); color:var(--ink-1); margin:0 0 14px; text-wrap:balance; letter-spacing:-.01em; }
+  .tagline{ font-size:18px; color:var(--ink-2); margin:0 0 20px; max-width:56ch; }
+  .metarow{ display:flex; flex-wrap:wrap; gap:10px 22px; font-size:12.5px; color:var(--ink-3); font-family:"IBM Plex Mono",monospace; padding:16px 0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin:20px 0 40px; }
+  .metarow b{ color:var(--ink-1); font-weight:600; }
+
+  .pivot{ background:var(--accent-wash); border:1px solid var(--accent); border-radius:10px; padding:20px 22px; margin:0 0 44px; }
+  .pivot .k{ font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); margin:0 0 8px; }
+  :root[data-theme="dark"] .pivot .k, :root:not([data-theme="light"]) .pivot .k{ color:var(--accent-ink); filter:brightness(1.4); }
+  .pivot p{ margin:0; color:var(--ink-1); font-size:14.5px; }
+  .pivot p + p{ margin-top:8px; }
+
+  section{ margin:0 0 52px; }
+  section > h2{ font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:24px; color:var(--ink-1); margin:0 0 6px; text-wrap:balance; }
+  .section-lede{ color:var(--ink-2); margin:0 0 24px; max-width:62ch; font-size:14.5px; }
+  h3{ font-size:16px; font-weight:600; color:var(--ink-1); margin:32px 0 12px; }
+  p{ max-width:66ch; }
+
+  .entities{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .entity{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .entity .name{ font-family:"IBM Plex Mono",monospace; font-size:13px; font-weight:600; color:var(--primary); margin:0 0 6px; }
+  :root[data-theme="dark"] .entity .name, :root:not([data-theme="light"]) .entity .name{ color:var(--accent); }
+  .entity .desc{ font-size:13px; color:var(--ink-2); margin:0 0 10px; }
+  .entity .fields{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); line-height:1.7; }
+  .entity .fields b{ color:var(--ink-2); font-weight:600; }
+
+  .endpoint{ display:flex; align-items:baseline; gap:10px; margin:0 0 4px; flex-wrap:wrap; }
+  .verb{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:999px; letter-spacing:.02em; }
+  .verb.post{ background:var(--primary-wash); color:var(--primary); }
+  :root[data-theme="dark"] .verb.post, :root:not([data-theme="light"]) .verb.post{ color:var(--accent); }
+  .verb.get{ background:var(--good-wash); color:var(--good); }
+  .path{ font-family:"IBM Plex Mono",monospace; font-size:14px; color:var(--ink-1); font-weight:600; }
+  .api-card{ background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 18px; margin:0 0 14px; }
+  .api-card .desc{ font-size:13px; color:var(--ink-2); margin:8px 0 10px; }
+  pre{ background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; overflow-x:auto; font-size:12px; line-height:1.6; margin:0; }
+  pre code{ color:var(--ink-2); }
+  .tablewrap{ overflow-x:auto; }
+  table{ width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; font-size:13px; }
+  th, td{ text-align:left; padding:10px 13px; border-bottom:1px solid var(--border); vertical-align:top; }
+  thead th{ background:var(--surface-2); color:var(--ink-3); font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+  tbody tr:last-child td{ border-bottom:none; }
+  td code{ font-size:12px; background:var(--surface-2); padding:1px 5px; border-radius:4px; }
+
+  .phase{ display:grid; grid-template-columns:56px 1fr; gap:16px; margin:0 0 4px; }
+  .phase-num{ font-family:"Fraunces",serif; font-weight:600; font-size:22px; color:var(--border-strong); text-align:right; padding-top:2px; }
+  .phase.active .phase-num{ color:var(--accent); }
+  .phase-body{ border-left:2px solid var(--border); padding:0 0 32px 20px; margin-left:-1px; }
+  .phase:last-child .phase-body{ border-left-color:transparent; padding-bottom:0; }
+  .phase-title{ font-size:15.5px; font-weight:600; color:var(--ink-1); margin:0 0 4px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .phase-status{ font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; padding:2px 8px; border-radius:999px; }
+  .phase-status.next{ background:var(--accent-wash); color:var(--accent); }
+  :root[data-theme="dark"] .phase-status.next, :root:not([data-theme="light"]) .phase-status.next{ color:var(--accent-ink); filter:brightness(1.5); }
+  .phase-status.later{ background:var(--surface-2); color:var(--ink-3); }
+  .phase-gate{ font-size:13px; color:var(--ink-2); margin:8px 0 0; }
+  .phase-gate b{ color:var(--ink-1); }
+  .phase ul{ margin:8px 0 0; padding-left:18px; font-size:13.5px; }
+  .phase li{ margin:0 0 4px; }
+
+  .oq{ background:var(--warn-wash); border:1px solid var(--warn); border-radius:10px; padding:14px 16px; margin:0 0 10px; }
+  .oq .q{ font-size:13.5px; font-weight:600; color:var(--ink-1); margin:0 0 4px; }
+  .oq .a{ font-size:13px; color:var(--ink-2); margin:0; }
+  .decided{ background:var(--good-wash); border:1px solid var(--good); border-radius:10px; padding:14px 16px; margin:0 0 10px; }
+  .decided .q{ font-size:13.5px; font-weight:600; color:var(--ink-1); margin:0 0 4px; }
+  .decided .a{ font-size:13px; color:var(--ink-2); margin:0; }
+
+  .mapping-note{ font-size:12.5px; color:var(--ink-3); margin:10px 0 18px; }
+
+  footer{ border-top:1px solid var(--border); padding-top:20px; font-size:12.5px; color:var(--ink-3); }
+
+  @media (max-width:600px){
+    .phase{ grid-template-columns:34px 1fr; gap:10px; }
+    .phase-num{ font-size:17px; }
+  }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">Rencana platform — v1</p>
+    <h1>getlearn.ai</h1>
+    <p class="tagline">Learner Intelligence Infrastructure yang berdiri sendiri: model data kanonik dan API untuk penguasaan materi (mastery), kesenjangan belajar, dan tindakan belajar berikutnya — dirancang lepas dari LMS mana pun sejak awal, dengan Frappe LMS Nusadaya Academy sebagai connector pertama yang membuktikannya.</p>
+    <div class="metarow">
+      <span><b>Status</b> Perencanaan</span>
+      <span><b>Klien / connector pertama</b> Frappe (Nusadaya Academy)</span>
+      <span><b>Bukan target</b> Tutor LMS</span>
+      <span><b>Pemilik</b> getlearn.ai core</span>
+    </div>
+  </header>
+
+  <div class="pivot">
+    <p class="k">Perubahan arah dari rencana sebelumnya</p>
+    <p>Riset AI Study Coach sebelumnya (item 38 roadmap Nusadaya) merancang index RAG, logic mastery, dan chat langsung di dalam aplikasi Frappe. Rencana itu digantikan oleh dokumen ini: intelligence layer sekarang berdiri sebagai service sendiri, bisa dijangkau LMS apa pun lewat satu API yang stabil.</p>
+    <p><b>Urutannya penting</b>: model kanonik di bawah ini dirancang lebih dulu, lepas dari skema Frappe. Frappe adalah connector pertama yang mengimplementasikan model itu — bukti bahwa standarnya jalan — bukan sumber dari mana standarnya diturunkan. Connector LMS kedua nanti tidak boleh butuh model intinya dirombak ulang.</p>
+  </div>
+
+  <section id="model">
+    <h2>1. Model data kanonik</h2>
+    <p class="section-lede">Tujuh entitas, didefinisikan tanpa merujuk ke nama tabel LMS mana pun. Setiap connector — Frappe dulu, yang lain kemudian — memetakan skemanya sendiri ke entitas ini, bukan sebaliknya.</p>
+
+    <div class="entities">
+      <div class="entity">
+        <div class="name">Learner</div>
+        <div class="desc">Orang yang mengikuti kursus, diidentifikasi cuma lewat string opaque per-tenant — bukan nama atau email asli.</div>
+        <div class="fields"><b>id</b> string<br><b>tenant_id</b> string<br><b>external_ref</b> string</div>
+      </div>
+      <div class="entity">
+        <div class="name">LearningObjective</div>
+        <div class="desc">Hal atomik yang harus dikuasai atau bisa dilakukan learner. Satuan yang dijadikan acuan mastery.</div>
+        <div class="fields"><b>id</b> string<br><b>label</b> string<br><b>parent_id</b> string?<br><b>tenant_id</b> string</div>
+      </div>
+      <div class="entity">
+        <div class="name">ContentItem</div>
+        <div class="desc">Satu materi yang mengajarkan satu atau lebih objective — lesson teks, potongan video, halaman PDF, slide SCORM.</div>
+        <div class="fields"><b>id</b> string<br><b>type</b> text|video|pdf|scorm<br><b>objective_ids</b> [string]<br><b>source_uri</b> string?</div>
+      </div>
+      <div class="entity">
+        <div class="name">AssessmentItem</div>
+        <div class="desc">Satu soal atau tugas yang menguji satu atau lebih objective. Membawa teks soalnya sendiri, jadi modelnya bisa mikir <i>kenapa</i> jawabannya salah, bukan cuma tahu salah.</div>
+        <div class="fields"><b>id</b> string<br><b>objective_ids</b> [string]<br><b>item_type</b> mcq|short|essay<br><b>prompt_text</b> string</div>
+      </div>
+      <div class="entity">
+        <div class="name">AssessmentEvent</div>
+        <div class="desc">Satuan bukti paling kecil: satu jawaban satu learner atas satu soal, sekali. Semua yang di bawahnya dihitung dari aliran data ini.</div>
+        <div class="fields"><b>id</b> string<br><b>learner_id</b> string<br><b>item_id</b> string<br><b>is_correct</b> bool<br><b>raw_response</b> string<br><b>occurred_at</b> datetime</div>
+      </div>
+      <div class="entity">
+        <div class="name">MasteryRecord</div>
+        <div class="desc">Hasil hitungan, tidak pernah ditulis langsung oleh connector — posisi terkini satu learner di satu objective, lengkap dengan tingkat keyakinannya.</div>
+        <div class="fields"><b>learner_id</b> string<br><b>objective_id</b> string<br><b>score</b> 0–1<br><b>evidence_count</b> int<br><b>updated_at</b> datetime</div>
+      </div>
+      <div class="entity">
+        <div class="name">Recommendation</div>
+        <div class="desc">Hasil hitungan — tindakan belajar berikutnya buat satu learner, plus objective yang memicunya, jadi UI bisa nunjukin alasannya.</div>
+        <div class="fields"><b>learner_id</b> string<br><b>action</b> review|practice|reassess<br><b>target_id</b> string<br><b>reason_objective_id</b> string</div>
+      </div>
+    </div>
+
+    <h3>Penyimpanan buat RAG — bukan sistem terpisah</h3>
+    <p>Riset RAG sebelumnya (dulu buat AI Study Coach di Frappe) merancang alurnya, tapi belum pernah memutuskan tempat penyimpanannya secara konkret. Diputuskan sekarang: pakai ekstensi <b>pgvector</b> di Postgres yang sama (bagian 9), bukan vector database terpisah (Pinecone/Weaviate/dst). Alasannya langsung — isolasi tenant yang sudah dipasang lewat Row-Level Security di bagian 2 otomatis meng-cover index vektor juga, bukan pagar kedua yang harus dijaga sendiri di sistem lain.</p>
+    <div class="entities">
+      <div class="entity">
+        <div class="name">ContentChunk</div>
+        <div class="desc">Satu potongan teks dari ContentItem, cukup kecil buat jadi satu unit retrieval — bukan seluruh lesson sekali embed.</div>
+        <div class="fields"><b>id</b> string<br><b>content_item_id</b> string<br><b>tenant_id</b> string<br><b>chunk_index</b> int<br><b>chunk_text</b> string<br><b>embedding</b> vector</div>
+      </div>
+    </div>
+    <p class="mapping-note">Dipicu ulang setiap <code>POST /v1/content-items</code> menulis ulang satu ContentItem — bukan dijadwalkan berkala. Chunk lama milik content_item itu dibuang habis dan diganti set baru, bukan ditumpuk, supaya index tidak pernah menyimpan potongan dari versi materi yang sudah diedit connector.</p>
+
+    <h3>Ekstraksi konten — dari materi mentah jadi <code>chunk_text</code></h3>
+    <p>ContentChunk di atas butuh teks buat di-embed. Buat block teks lesson, teksnya sudah ada. Buat video, PDF, dan SCORM — belum, dan sebelum ini diputuskan, chunking di atas cuma teori. Diputuskan pakai kemampuan multimodal Gemini (satu provider yang sama dari bagian 3) buat semua ekstraksi non-teks, bukan menambah library/servis ekstraksi terpisah per tipe:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Tipe ContentItem</th><th>Sumber mentah</th><th>Cara jadi teks</th></tr></thead>
+        <tbody>
+          <tr><td>text</td><td>block lesson yang sudah teks</td><td>Dipakai langsung — tidak ada ekstraksi.</td></tr>
+          <tr><td>pdf</td><td>file PDF</td><td>Dikirim ke Gemini sebagai dokumen langsung (bukan library parser terpisah) — terverifikasi mendukung sampai 50MB/1000 halaman, ikut membaca tabel dan diagram, bukan cuma teks polos.</td></tr>
+          <tr><td>video</td><td>URL YouTube publik, atau file video yang nempel di package (SCORM)</td><td>URL YouTube dikirim langsung ke Gemini tanpa didownload dulu — terverifikasi didukung native (batas 8 jam/hari di tier gratis, tidak terbatas di tier berbayar, video harus publik). File video yang bukan di YouTube (dari dalam package SCORM) lewat jalur upload file yang sama ke Gemini, bukan URL.</td></tr>
+          <tr><td>scorm</td><td>package HTML+asset statis</td><td>Teks HTML dalam package di-scrape langsung — sudah disajikan sebagai file statis lewat SCORMRenderer (bagian 6). Video yang menempel di dalamnya ikut jalur video di atas, jadi satu ContentItem SCORM bisa menghasilkan ContentChunk dari sumber campuran.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="mapping-note">Ekstraksi video/PDF lewat Gemini butuh waktu nyata, jadi berjalan async di belakang <code>POST /v1/content-items</code>, bukan bagian dari response registrasinya. Konsekuensinya: index RAG buat materi yang baru didaftarkan "matang" beberapa saat kemudian, bukan seketika — recommendation dan chat yang merujuk materi itu boleh saja belum akurat selama jendela waktu itu.</p>
+  </section>
+
+  <section id="api">
+    <h2>2. Bentuk API-nya</h2>
+    <p class="section-lede">Dua arah: connector <i>mendaftarkan</i> apa yang diajarkan konten miliknya (objective, item, content — didaftarkan sekali, diperbarui kalau diedit), lalu <i>melapor</i> apa yang terjadi (event, setiap kali kejadian), dan secara terpisah <i>bertanya</i> keadaan terkini seorang learner.</p>
+
+    <h3>Daftarkan — konten milik connector, dalam bentuk kanonik</h3>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb post">POST</span><span class="path">/v1/objectives</span></div>
+      <div class="desc">Upsert idempotent, dikunci oleh <code>tenant_id</code> + id milik connector sendiri. Mendaftarkan atau memperbarui satu LearningObjective.</div>
+    </div>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb post">POST</span><span class="path">/v1/content-items</span></div>
+      <div class="desc">Mendaftarkan satu ContentItem dan objective yang diajarkannya.</div>
+    </div>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb post">POST</span><span class="path">/v1/assessment-items</span></div>
+      <div class="desc">Mendaftarkan satu AssessmentItem — teks soal dan objective yang diujinya.</div>
+    </div>
+
+    <h3>Lapor — apa yang dilakukan learner</h3>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb post">POST</span><span class="path">/v1/events</span></div>
+      <div class="desc">Satu bentuk envelope generik, bukan bentuk khas Frappe:</div>
+      <pre><code>{
+  "event_type": "assessment.answered",
+  "learner_id": "usr_9f2a",
+  "occurred_at": "2026-09-18T10:31:00Z",
+  "payload": {
+    "item_id": "q_2451",
+    "is_correct": false,
+    "raw_response": "..."
+  }
+}</code></pre>
+      <p class="desc" style="margin-top:10px;">Daftar <code>event_type</code> yang tetap: <code>assessment.answered</code>, <code>content.viewed</code>, <code>content.completed</code>, <code>enrollment.created</code>. Connector kedua melaporkan empat jenis yang sama, apa pun sebutannya di skema mereka sendiri.</p>
+      <p class="desc"><code>tenant_id</code> sengaja tidak ada di body ini — kalau connector yang menuliskannya, connector yang salah kode (atau yang jahat) bisa mengaku jadi tenant lain. <code>tenant_id</code> diturunkan di server dari API key yang dipakai autentikasi, bukan dari apa pun yang dikirim.</p>
+    </div>
+
+    <h3>Tanya — keadaan terkini seorang learner</h3>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb get">GET</span><span class="path">/v1/learners/{id}/mastery</span></div>
+      <div class="desc">Semua objective yang sudah ada buktinya buat learner ini, dan skornya saat ini.</div>
+    </div>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb get">GET</span><span class="path">/v1/learners/{id}/gaps</span></div>
+      <div class="desc">Mastery record yang di bawah ambang batas — bagian yang benar-benar layak ditampilkan ke UI.</div>
+    </div>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb get">GET</span><span class="path">/v1/learners/{id}/next-action</span></div>
+      <div class="desc">Satu Recommendation — apa yang harus ditampilkan UI connector sekarang.</div>
+    </div>
+
+    <h3>Ngobrol — chat yang dipersonalisasi, dua tingkat cakupan</h3>
+    <p>Riset percakapan yang sudah dikerjakan sebelumnya (dulu di roadmap Nusadaya, dirancang buat nempel di Frappe) pindah ke sini apa adanya — dua bentuk cakupan yang sudah diputuskan tetap sama, cuma sekarang jadi endpoint getlearn.ai sendiri, bukan komponen di Frappe.</p>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb post">POST</span><span class="path">/v1/chat/sessions</span></div>
+      <div class="desc">Membuka sesi baru. <code>scope: "objective"</code> (dulu disebut "chat per-lesson" — dikunci ke satu/beberapa objective yang lagi dipelajari, konteksnya dibekukan di awal sesi) atau <code>scope: "learner"</code> (dulu "chat lintas-course" — tidak dikunci ke objective tertentu, retrieval jalan ulang tiap pesan lewat semua objective milik learner itu). Pesan pembuka otomatis merujuk MasteryRecord yang paling lemah dalam cakupan itu.</div>
+    </div>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb post">POST</span><span class="path">/v1/chat/sessions/{id}/messages</span></div>
+      <div class="desc">Kirim satu pesan. Balasannya selalu membawa objective/content_id yang jadi dasar jawaban (badge sumber), dan model wajib diinstruksikan cuma menjawab dari materi yang diambilkan retrieval — bukan pengetahuan umum.</div>
+    </div>
+    <p class="mapping-note">Kontrol biaya yang sudah diputuskan sebelumnya ikut terbawa: batas jumlah pesan per sesi, dan rate limit per learner — karena chat satu-satunya bagian yang biayanya naik sebanding pemakaian, beda dari kartu rekomendasi yang sekali-generate.</p>
+
+    <h3>Bicara — suara lewat Fish Audio</h3>
+    <p>Perluasan opsional di atas chat yang sudah ada, bukan fase tersendiri: coach bisa membacakan balasannya, dan (kalau diaktifkan) menerima pertanyaan lewat suara juga.</p>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb post">POST</span><span class="path">/v1/chat/sessions/{id}/messages</span> <span class="mono" style="font-size:12px;color:var(--ink-3);">?voice=true</span></div>
+      <div class="desc">Balasan teks yang sama, plus <code>audio_url</code> — teksnya dikirim ke Fish Audio (<code>POST https://api.fish.audio/v1/tts</code>, model <code>s2.1-pro</code>, auth Bearer) yang mengembalikan audio streaming. Terkonfirmasi mendukung 83 bahasa dengan deteksi otomatis, termasuk Indonesia — tidak perlu bilang bahasanya ke API-nya.</div>
+    </div>
+    <p class="mapping-note"><b>Batasannya, dicek langsung ke dokumentasi Fish Audio, bukan diasumsikan:</b> yang tersedia itu Text-to-Speech dan Speech-to-Text sebagai dua panggilan bergilir yang terpisah — belum ada endpoint realtime/WebSocket buat percakapan suara dua arah yang mengalir seperti telepon. Jadi ini "coach yang bisa dibacakan dan didengarkan", belum "ngobrol suara langsung tanpa putus". Menambah biaya nyata per pesan di atas biaya chat teks yang sudah ada — pertimbangkan diaktifkan per sesi atas permintaan learner, bukan default selalu nyala.</p>
+
+    <h3>Guardrail jawaban — hint bukan jawaban, wajib merujuk lesson, tidak boleh halu</h3>
+    <p>Tiga aturan berbeda, sering tercampur jadi satu kalau tidak dipisah begini — ketiganya berlaku di chat dan di Recommendation, bukan cuma salah satu.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Guardrail</th><th>Bentuknya</th></tr></thead>
+        <tbody>
+          <tr><td>Hint, bukan jawaban langsung</td><td>Kalau pertanyaan learner cocok dengan AssessmentItem yang sedang aktif dikerjakannya, sistem prompt melarang model menyebut jawaban akhirnya — balasan wajib berbentuk pertanyaan pengarah atau pointer ke ContentItem yang relevan (metode Socratic). Pertanyaan konsep umum yang bukan soal aktif tetap boleh dijawab langsung dari materi.</td></tr>
+          <tr><td>Citation ke lesson</td><td>Setiap balasan (chat maupun Recommendation) wajib membawa <code>source_content_ids</code> — bukan cuma badge sumber di UI, tapi id ContentItem kanonik yang jadi dasar jawabannya. Connector yang tahu URL lesson aslinya di sistemnya sendiri dan yang memetakan id itu jadi tautan "buka materi ini" — getlearn.ai cuma mengirim id-nya, tidak pernah menerka URL internal connector.</td></tr>
+          <tr><td>Tidak boleh halu</td><td>Kelanjutan dari aturan "cuma menjawab dari materi retrieval" yang sudah ada: kalau skor kecocokan hasil retrieval di bawah ambang batas (topiknya tidak ada di materi tenant itu), balasan wajib menolak eksplisit — "tidak ada di materi ini" — bukan model mengarang dari pengetahuan umumnya sendiri. Sebelum go-live, diuji dengan set pertanyaan yang jawabannya sudah diketahui ada/tidak ada di materi Nusadaya, diukur berapa persen model tetap ngarang.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Multi-tenant sejak fondasi, bukan ditambah belakangan</h3>
+    <p>Satu tenant = satu institusi/instalasi LMS yang connect ke getlearn.ai — bukan satu learner. Nusadaya Academy adalah tenant pertama, tapi setiap entity kanonik di bagian 1 (Learner, LearningObjective, ContentItem, AssessmentItem, AssessmentEvent, MasteryRecord, Recommendation, ChatSession) membawa kolom <code>tenant_id</code> sejak skema pertama dibuat, sama seperti keputusan "standar dulu, Frappe belakangan" di atas — kalau ditambah nanti setelah tenant kedua datang, migrasinya jauh lebih menyakitkan daripada menambahnya sejak awal.</p>
+    <p>Setiap panggilan API membawa API key yang diterbitkan khusus buat satu tenant. Penerbitan, verifikasi, dan rate limit key-nya dipakaikan <b>Unkey</b> — bukan tabel key hand-rolled sendiri — karena tiga hal yang tadinya harus dibangun sendiri (issue/revoke key, rate limit per key, usage credit) sudah jadi satu servis: <code>keys.createKey</code> menerbitkan, <code>keys.verifyKey</code> memverifikasi tiap request dan mengembalikan metadata + sisa rate limit-nya dalam satu panggilan. <code>tenant_id</code> ditaruh sebagai metadata yang menempel di key itu waktu diterbitkan, lalu selalu diturunkan di server dari hasil verifikasi Unkey — tidak pernah dipercaya dari body atau parameter yang dikirim connector, supaya connector yang salah kode (atau koneksi ketiga yang disusupkan) tidak bisa mengaku jadi tenant lain. <code>learner_id</code>, <code>item_id</code>, dan id lain yang melewati batas ini tetap string opaque per-tenant — getlearn.ai tidak perlu mengurai bentuk id internal connector, cukup memperlakukannya sebagai kunci yang stabil di dalam tenant itu.</p>
+    <div class="api-card">
+      <div class="endpoint"><span class="verb post">POST</span><span class="path">/v1/tenants</span></div>
+      <div class="desc">Endpoint admin — dipanggil dari sisi getlearn.ai sendiri saat onboarding tenant baru, bukan dipanggil connector. Membuat satu tenant record di database sendiri, lalu memanggil <code>keys.createKey</code> Unkey buat menerbitkan API key pertamanya dengan <code>tenant_id</code> sebagai metadata. Nusadaya jadi tenant pertama yang dibuat lewat jalur ini juga (bukan di-hardcode di luar sistem), supaya jalur yang sama sudah teruji waktu tenant kedua datang.</div>
+    </div>
+    <p><b>Isolasi data, bukan cuma disiplin kode:</b> satu database Postgres terkelola dipakai bersama semua tenant (lebih murah dioperasikan daripada satu database per tenant, dan cukup untuk skala yang dituju sekarang). Tapi karena data yang lewat sini termasuk data assessment siswa — sebagian di bawah umur — isolasinya dipasang berlapis: setiap query aplikasi tetap wajib filter <code>tenant_id</code>, DAN di atasnya dipasang kebijakan Postgres Row-Level Security (RLS) di level database. Dengan RLS, kalaupun ada bug di kode aplikasi yang lupa menambahkan filter tenant, database sendiri yang menolak baris milik tenant lain — bukan cuma berharap kode aplikasinya selalu benar. Ini bagian dari alasan konkret memilih Postgres (bukan MySQL) buat database Railway di bagian 9.</p>
+    <p class="mapping-note">Konfigurasi yang perlu ditampung per-tenant sejak skema awal, bukan ditambah belakangan: penyedia AI yang dipakai (Gemini/DeepSeek), ambang batas mastery buat dianggap "gap", dan apakah fitur suara (Fish Audio) diaktifkan — supaya Nusadaya dan tenant kedua nanti bisa punya setting berbeda tanpa ubah kode.</p>
+
+    <h3>Manajemen API — bukan cuma endpoint yang jalan</h3>
+    <p>Bagian ini yang belum ada sebelumnya: lima hal yang bikin API-nya bisa dipercaya dipakai connector kedua nanti, bukan cuma bisa dipakai Frappe yang kita kontrol sendiri.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Hal</th><th>Keputusan</th></tr></thead>
+        <tbody>
+          <tr><td>Idempotency</td><td><code>POST /v1/events</code> wajib menerima <code>event_id</code> yang dibuat connector sendiri. Kalau connector retry karena timeout — sama seperti retry yang direkomendasikan di bagian 9 — getlearn.ai membuang duplikat berdasar <code>event_id</code>, bukan mencatatnya dua kali. Tanpa ini, justru retry yang dimaksud buat keandalan malah merusak akurasi mastery.</td></tr>
+          <tr><td>Rate limit</td><td>Dipasang di Unkey, menempel ke tiap API key, per tenant — bukan kuota global. Satu tenant yang lagi kirim badai event (atau bug loop di connector-nya) tidak boleh menghabiskan kapasitas tenant lain — kelanjutan langsung dari prinsip isolasi di atas, sekarang buat beban, bukan cuma data.</td></tr>
+          <tr><td>Bentuk error</td><td>Satu error envelope yang sama di semua endpoint: kode, pesan, dan field yang salah kalau soal validasi. Connector kedua tidak perlu menerka bentuk error yang beda-beda per endpoint.</td></tr>
+          <tr><td>Pagination</td><td>Endpoint yang mengembalikan list (misalnya daftar Recommendation aktif buat panel client di bagian 5) pakai cursor, bukan offset — konsisten dengan skala ratusan/ribuan learner yang sudah jadi pertimbangan sejak awal.</td></tr>
+          <tr><td>Versi &amp; dokumentasi</td><td><code>/v1/</code> sudah menyiratkan janji versi, tapi kebijakan deprecation-nya (berapa lama v1 tetap hidup begitu ada v2) belum diputuskan. Spec OpenAPI dari fase 0 wajib benar-benar di-serve sebagai dokumentasi yang bisa dibaca siapa pun yang membangun connector — bukan dokumen internal yang didiamkan di repo.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Saldo token dan top-up tenant — beda urusan dari Unkey</h3>
+    <p>Unkey (di atas) menjawab siapa yang boleh memanggil dan seberapa sering — bukan menjawab siapa yang bayar berapa. Biaya nyata per tenant (token Gemini/DeepSeek per pesan chat, karakter Fish Audio per detik suara) berubah-ubah sekali panggilan ke panggilan lain, jadi tidak pas dipetakan ke "credit" flat ala Unkey (satu verifikasi = satu credit, tanpa peduli isi request-nya). Saldo dan top-up-nya jadi ledger sendiri, di Postgres yang sama (bagian 1), terpisah dari mekanisme auth Unkey.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Bagian</th><th>Cara kerjanya</th></tr></thead>
+        <tbody>
+          <tr><td>Saldo</td><td>Satu kolom saldo token per tenant. Tiap panggilan yang mengonsumsi AI (chat message, embedding saat registrasi konten, TTS Fish Audio) dipotong sesuai biaya aktualnya begitu panggilannya selesai — bukan tarif flat per request, karena panjang pesan dan durasi suara jauh berbeda-beda biayanya.</td></tr>
+          <tr><td>Penolakan waktu saldo habis</td><td>Sebelum satu panggilan berbiaya AI dijalankan, saldo dicek dulu — kalau sudah &le;0, ditolak dengan error yang jelas ("saldo token tenant habis"), bukan diproses lalu saldo jadi negatif tanpa batas. Endpoint yang tidak berbiaya AI (registrasi objective/content/item, event) tetap jalan seperti biasa — cuma jalur AI yang digerbangi saldo.</td></tr>
+          <tr><td>Top-up</td><td>Dilakukan lewat panel superadmin (bagian 5) — nambah saldo tenant secara manual, karena fase awal belum ada pembayaran self-serve. <code>POST /v1/admin/tenants/{id}/credits</code>, bukan dipanggil connector.</td></tr>
+          <tr><td>Transparansi ke tenant</td><td>Panel client (bagian 5) menampilkan saldo saat ini dan riwayat pemakaian — bukan cuma "jumlah event masuk" seperti draft sebelumnya, sekarang benar-benar saldo token yang bisa habis.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="providers">
+    <h2>3. Penyedia AI — Gemini dan DeepSeek, bukan satu vendor terkunci</h2>
+    <p class="section-lede">Nusadaya sendiri sudah punya preseden persis untuk ini: fitur generate-quiz-dengan-AI di Frappe sudah punya selector provider Gemini/DeepSeek. getlearn.ai memakai pola yang sama, bukan pola baru.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Kebutuhan</th><th>Penyedia</th><th>Alasan</th></tr></thead>
+        <tbody>
+          <tr><td>Embedding (buat retrieval RAG di fase 3)</td><td>Gemini</td><td>Punya API embedding native yang sudah diverifikasi (<code>gemini-embedding-001</code>) — DeepSeek tidak punya endpoint embedding publik yang setara.</td></tr>
+          <tr><td>Generasi teks (rekomendasi, jawaban chat)</td><td>Gemini atau DeepSeek, bisa dipilih</td><td>Lewat lapisan abstraksi provider — bisa dialihkan berdasar biaya/latensi, tanpa menulis ulang logic di atasnya kalau satu provider naik harga atau limit.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="mapping-note">Detail lengkap API embedding Gemini (endpoint, model, output_dimensionality) sudah pernah diriset dan diverifikasi sebelumnya — tetap berlaku, cuma pindah rumah ke getlearn.ai.</p>
+  </section>
+
+  <section id="sdk">
+    <h2>4. SDK — pembungkus API di atas, bukan API baru</h2>
+    <p class="section-lede">Connector tidak memanggil endpoint mentah satu-satu dengan HTTP client sendiri-sendiri. SDK menyediakan fungsi siap pakai yang sudah membawa auth, retry, dan bentuk data yang benar — supaya kesalahan kecil (header auth lupa, retry yang tidak konsisten) tidak terulang di setiap connector.</p>
+    <p>Minimal yang dibutuhkan buat fase 2 (connector Frappe): SDK Python, karena Frappe itu Python. Satu fungsi per endpoint kanonik — <code>register_objective()</code>, <code>send_event()</code>, <code>get_mastery()</code>, <code>get_next_action()</code>, <code>start_chat_session()</code>, <code>send_chat_message()</code>. SDK bahasa lain (JS/TS) baru relevan kalau ada connector atau widget yang jalan di sisi browser langsung — belum sekarang.</p>
+  </section>
+
+  <section id="frontend">
+    <h2>5. Frontend — panel client dan panel superadmin</h2>
+    <p class="section-lede">Dua audiens dengan kepentingan yang beda arah, jadi dua panel yang beda — bukan satu dashboard yang dicabang-cabang lewat role. Keduanya cuma UI tipis di atas API kanonik di bagian 2, bukan permukaan baru: hampir semua data yang ditampilkan sudah punya endpoint-nya sendiri.</p>
+
+    <h3>Panel client — buat admin di sisi tenant</h3>
+    <p>Pemakainya admin di sisi tenant sendiri (tim Nusadaya buat tenant pertama, tim institusi lain buat tenant berikutnya) — bukan learner, dan bukan tim getlearn.ai. Login di-scope ke satu <code>tenant_id</code>, sejalan dengan isolasi RLS di bagian 2: secara desain, panel ini tidak punya jalan buat melihat data tenant lain.</p>
+    <div class="entities">
+      <div class="entity">
+        <div class="name">Ringkasan mastery</div>
+        <div class="desc">Distribusi skor per objective lintas learner, dan daftar learner yang lagi "gap" — versi lebih agregat dari <code>GET /v1/learners/{id}/mastery</code> dan <code>/gaps</code>.</div>
+      </div>
+      <div class="entity">
+        <div class="name">Recommendation aktif</div>
+        <div class="desc">Apa yang sedang disarankan AI ke tiap learner sekarang — transparansi, bukan cuma black box yang muncul di Frappe.</div>
+      </div>
+      <div class="entity">
+        <div class="name">Setting tenant</div>
+        <div class="desc">Provider AI (Gemini/DeepSeek), ambang batas mastery buat gap, on/off suara — konfigurasi per-tenant yang sudah disebut di bagian 2, sekarang ada UI-nya lewat <code>GET/PATCH /v1/tenants/me/settings</code>.</div>
+      </div>
+      <div class="entity">
+        <div class="name">Saldo token &amp; API key</div>
+        <div class="desc">Saldo token yang tersisa dan riwayat pemakaiannya (bagian 2) — bukan cuma hitungan event kasar — plus lihat/putar-ulang API key sendiri. Nambah saldo dan membuat tenant baru tetap wewenang superadmin.</div>
+      </div>
+    </div>
+
+    <h3>Panel superadmin — internal getlearn.ai saja</h3>
+    <p>Pemakainya cuma tim getlearn.ai sendiri, tidak pernah dibuka ke tenant manapun — idealnya beda subdomain/deployment dari panel client, supaya satu bug auth tidak bisa nyasar jadi kebocoran lintas tenant.</p>
+    <div class="entities">
+      <div class="entity">
+        <div class="name">Kelola tenant &amp; top-up saldo</div>
+        <div class="desc">Daftar semua tenant, buat/suspend tenant, terbitkan/revoke API key lewat Unkey — UI di atas <code>POST /v1/tenants</code>, plus top-up saldo token manual per tenant lewat <code>POST /v1/admin/tenants/{id}/credits</code> (bagian 2).</div>
+      </div>
+      <div class="entity">
+        <div class="name">Observability lintas tenant</div>
+        <div class="desc">Kesehatan ingestion per tenant, status retry/dead-letter queue — langsung menjawab open question soal keandalan webhook di bagian 9, dan biaya AI provider per tenant.</div>
+      </div>
+    </div>
+    <p class="mapping-note">Query lewat panel ini butuh role database privileged yang <b>bypass RLS</b> di bagian 2 — satu-satunya jalur yang boleh melihat lintas tenant. Justru karena bisa melewati pagar itu, setiap akses lewat jalur ini wajib tercatat: siapa membuka data tenant siapa, kapan.</p>
+  </section>
+
+  <section id="connector">
+    <h2>6. Frappe sebagai connector pertama</h2>
+    <p class="section-lede">Ini detail implementasi satu connector, bukan model intinya. Sengaja dipisah, biar tabel pemetaan connector berikutnya nanti berdiri sendiri di sampingnya, bukan ikut masuk ke dalam skema di atas.</p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Konsep kanonik</th><th>Sumber di Frappe/Nusadaya</th><th>Catatan</th></tr></thead>
+        <tbody>
+          <tr><td>LearningObjective</td><td><code>LMS Question.topic</code></td><td>Field-nya sudah ada tapi kosong di praktiknya hari ini — belum ada UI editor yang menulisinya. Menutup celah ini adalah syarat, bukan opsional, biar connector ini bisa nge-tag objective sama sekali.</td></tr>
+          <tr><td>AssessmentItem</td><td><code>LMS Question</code></td><td>Teks soal dan pilihan jawaban sudah tersimpan apa adanya.</td></tr>
+          <tr><td>AssessmentEvent</td><td>baris <code>LMS Quiz Result</code></td><td>Dibuat per-soal saat submit — sudah persis granularitas yang dibutuhkan AssessmentEvent.</td></tr>
+          <tr><td>ContentItem</td><td><code>Course Lesson</code> (+ block di dalamnya)</td><td>Block teks, video, PDF, dan SCORM di satu lesson mungkin perlu didaftarkan sebagai ContentItem terpisah kalau mengajarkan objective yang berbeda.</td></tr>
+          <tr><td>Learner</td><td><code>User</code> yang enrolled</td><td><code>external_ref</code> = docname user tersebut; jangan pernah kirim nama atau email.</td></tr>
+          <tr><td>event content.completed</td><td>perubahan <code>LMS Enrollment.progress</code></td><td>Dipicu lewat mekanisme hook <code>doc_events</code> yang sudah dipakai di tempat lain di codebase ini (misalnya proses badge).</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="mapping-note">Sudah dicek langsung di codebase Nusadaya sebelum tabel ini ditulis — bukan diasumsikan dari nama skemanya saja.</p>
+  </section>
+
+  <section id="architecture">
+    <h2>7. Alur satu request, sebenarnya</h2>
+    <pre class="mermaid">
+sequenceDiagram
+    participant L as Learner
+    participant F as Frappe (Nusadaya)
+    participant G as getlearn.ai
+    L->>F: Submit satu quiz
+    F->>F: Menulis LMS Quiz Result
+    F-)G: POST /v1/events (assessment.answered)
+    Note over G: Memperbarui MasteryRecord<br/>untuk objective yang diuji
+    L->>F: Membuka card Study Coach
+    F->>G: GET /v1/learners/{id}/next-action
+    G-->>F: Recommendation
+    F-->>L: Menampilkan card-nya
+    </pre>
+  </section>
+
+  <section id="roadmap">
+    <h2>8. Urutan pembangunan</h2>
+    <p class="section-lede">Tiap fase harus membuktikan sesuatu dulu sebelum fase berikutnya dimulai. Gate-nya justru poin utamanya — melompatinya berarti baru sadar standarnya salah setelah connector kedua sudah dibangun mengikutinya.</p>
+
+    <div class="phase active">
+      <div class="phase-num">0</div>
+      <div class="phase-body">
+        <div class="phase-title">Kunci dulu standarnya <span class="phase-status next">Mulai di sini</span></div>
+        <p class="phase-gate"><b>Gate:</b> model dan API di bagian 1–2 sudah cukup stabil buat ditulis jadi connector, sebelum connector-nya sendiri ada.</p>
+        <ul>
+          <li>Tulis model dan API-nya jadi spec sungguhan (OpenAPI atau sejenisnya) — dokumen ini draft-nya, bukan artefak buat langsung dibangun</li>
+          <li>Putuskan handshake auth-nya: minimal API key per-tenant</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-num">1</div>
+      <div class="phase-body">
+        <div class="phase-title">Service kerangka, belum ada AI</div>
+        <p class="phase-gate"><b>Gate:</b> setiap endpoint di bagian 2 jalan penuh terhadap request yang dibuat manual, dengan hitungan mastery yang naif (persentase benar per objective) — membuktikan <i>standarnya</i>, bukan kecerdasannya.</p>
+        <ul>
+          <li>Endpoint ingestion menyimpan event mentah; endpoint registrasi melakukan upsert objective/item/content</li>
+          <li>Mastery cuma rumus placeholder — sengaja belum pekerjaan AI/RAG-nya</li>
+          <li>Panel superadmin versi paling minimal (bagian 5): form "buat tenant" + tampilkan API key sekali — menggantikan kerjaan psql manual dari sekarang, bukan ditunda sampai ada tenant kedua</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-num">2</div>
+      <div class="phase-body">
+        <div class="phase-title">Connector Frappe-nya</div>
+        <p class="phase-gate"><b>Gate:</b> satu submit quiz sungguhan di Nusadaya menghasilkan event sungguhan di getlearn.ai, dan angka mastery sungguhan balik lagi — membuktikan connector-nya, dengan kecerdasan yang masih placeholder.</p>
+        <ul>
+          <li>Tutup celah editor <code>LMS Question.topic</code> (bagian 6) — tanpa itu connector-nya tidak punya apa-apa buat nge-tag objective</li>
+          <li>Daftarkan objective/content/item Nusadaya yang sudah ada sekali, lalu streaming event lewat pola hook <code>doc_events</code> yang sudah ada, di-enqueue biar tidak pernah menahan satu request pun</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-num">3</div>
+      <div class="phase-body">
+        <div class="phase-title">Kecerdasan sungguhan <span class="phase-status later">Nanti</span></div>
+        <p class="phase-gate"><b>Gate:</b> rekomendasinya terbukti lebih baik dari rumus placeholder, diukur di data Nusadaya sendiri.</p>
+        <ul>
+          <li>Aktifkan pgvector di Postgres yang sama (bagian 1 dan 9) — bukan vector database terpisah. Chunking ContentItem jadi ContentChunk + embedding Gemini berjalan saat konten didaftarkan/diperbarui, alur RAG-nya sendiri lanjutan dari riset AI Study Coach sebelumnya, cuma penyimpanannya baru diputuskan sekarang</li>
+          <li>Next-best-action jadi berbasis model, bukan lagi ambang batas persentase</li>
+          <li>Panel client (bagian 5) versi internal — dipakai buat melihat langsung apakah rekomendasi berbasis RAG kelihatan lebih baik di data Nusadaya sendiri, sebelum ada UI publik apa pun buat tenant</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-num">4</div>
+      <div class="phase-body">
+        <div class="phase-title">Chat, lalu suara, baru connector kedua <span class="phase-status later">Nanti</span></div>
+        <p class="phase-gate"><b>Gate:</b> rekomendasi berbasis card sudah dipercaya dan dipakai, sebelum chat menambah biaya percakapan di atasnya — dan chat teks sudah stabil sebelum suara menambah biaya lagi di atas chat. Panel client wajib jadi portal self-serve sungguhan sebelum connector kedua onboarding — tenant yang bukan kita sendiri tidak bisa lagi dibantu lihat datanya lewat query manual seperti Nusadaya selama ini.</p>
+        <ul>
+          <li>Chat teks dulu (dua cakupan di bagian 2) — Frappe cuma nempel/proxy ke endpoint getlearn.ai</li>
+          <li>Suara (Fish Audio) diaktifkan belakangan, sebagai opsi per-sesi — bukan ikut default begitu chat teks jalan</li>
+          <li>Panel client (bagian 5) naik level dari alat internal jadi portal self-serve: login discoped tenant_id sungguhan, setting tenant, dan pemakaian/API key sendiri</li>
+          <li>Panel superadmin (bagian 5) ditambah observability lintas tenant — kesehatan ingestion dan status retry/dead-letter, langsung menjawab open question keandalan webhook di bagian 9</li>
+          <li>Connector kedua (Moodle, atau adapter webhook generik) baru dimulai setelah semua di atas terbukti — intinya justru buat nguji apakah standarnya beneran bisa dipakai di luar Frappe, oleh tenant yang bukan kita sendiri</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="open">
+    <h2>9. Yang sudah diputuskan, dan yang belum</h2>
+
+    <div class="decided">
+      <p class="q">Dijalankan di mana</p>
+      <p class="a">getlearn.ai jalan di Railway, sebagai project/service-nya sendiri — terpisah dari aplikasi Nusadaya sendiri di Railway, jadi tidak pernah rebutan compute dengan Nusadaya. Database-nya juga di Railway: <b>Postgres</b> secara spesifik (bukan MySQL), satu instance dipakai bersama semua tenant dengan isolasi lewat <code>tenant_id</code> + Row-Level Security (lihat bagian 2) — dipilih Postgres justru karena RLS-nya, bukan kebetulan.</p>
+    </div>
+
+    <div class="oq">
+      <p class="q">Apa yang boleh melewati batas tenant buat siswa di bawah umur?</p>
+      <p class="a">Assessment event keluar dari batas kepercayaan Frappe untuk pertama kalinya. Teks jawaban mentah, pola jawaban salah — putuskan apa yang benar-benar perlu dikirim vs yang cuma "kebetulan gampang", sebelum fase 2, bukan sesudahnya.</p>
+    </div>
+    <div class="oq">
+      <p class="q">Keandalan pengiriman webhook</p>
+      <p class="a">Kalau <code>POST /v1/events</code> gagal atau timeout — retry dari sisi Frappe, dead-letter queue di sisi getlearn.ai, atau dua-duanya? Belum diputuskan.</p>
+    </div>
+  </section>
+
+  <footer>
+    Menggantikan rencana AI Study Coach yang sebelumnya di dalam Frappe (item 38 roadmap Nusadaya). Riset RAG/retrieval pindah ke fase 3, riset dua cakupan chat (per-lesson dan lintas-course) pindah ke bagian 2 dan fase 4 — isinya tetap terpakai, cuma rumahnya pindah dari Frappe ke getlearn.ai.
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default'
+  });
+</script>
+</body>
+</html>

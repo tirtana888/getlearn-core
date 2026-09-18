@@ -1,0 +1,524 @@
+openapi: 3.1.0
+info:
+  title: getlearn.ai Core API
+  version: 1.0.0
+  description: |
+    Canonical Learner Intelligence Infrastructure API.
+    Provides data models and endpoints for learning objectives, content items,
+    assessment items, event ingestion with idempotency, and learner mastery/recommendations.
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://api.getlearn.ai
+    description: Production API
+
+paths:
+  /v1/objectives:
+    post:
+      summary: Upsert Learning Objective
+      description: Registers or updates an atomic competency unit scoped to the authenticated tenant.
+      operationId: upsertObjective
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearningObjectiveInput'
+      responses:
+        '200':
+          description: Objective updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningObjective'
+        '201':
+          description: Objective created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningObjective'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/content-items:
+    post:
+      summary: Upsert Content Item
+      description: Registers or updates instructional material (text, video, pdf, scorm) and maps to learning objectives.
+      operationId: upsertContentItem
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContentItemInput'
+      responses:
+        '200':
+          description: Content item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentItem'
+        '201':
+          description: Content item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/assessment-items:
+    post:
+      summary: Upsert Assessment Item
+      description: Registers or updates a question or test item along with its tested objectives and prompt text.
+      operationId: upsertAssessmentItem
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssessmentItemInput'
+      responses:
+        '200':
+          description: Assessment item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentItem'
+        '201':
+          description: Assessment item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentItem'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/events:
+    post:
+      summary: Ingest Assessment Event
+      description: |
+        Ingests a learner answer event. Idempotent based on `event_id` within the tenant.
+        Automatically resolves or creates the learner and triggers mastery recalculation.
+      operationId: ingestEvent
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssessmentEventInput'
+      responses:
+        '200':
+          description: Event processed (or duplicate safely ignored)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventIngestionResult'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/learners/{id}/mastery:
+    get:
+      summary: Get Learner Mastery
+      description: Returns mastery records across all learning objectives evaluated for the learner.
+      operationId: getLearnerMastery
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The learner's external or internal ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of mastery records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  learner_id:
+                    type: string
+                  mastery:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MasteryRecord'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /v1/learners/{id}/gaps:
+    get:
+      summary: Get Learner Learning Gaps
+      description: Returns objectives where mastery score is below the tenant threshold (default 0.70).
+      operationId: getLearnerGaps
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: threshold
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 0.70
+      responses:
+        '200':
+          description: Identified learning gaps
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  learner_id:
+                    type: string
+                  threshold:
+                    type: number
+                  gaps:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MasteryRecord'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/learners/{id}/next-action:
+    get:
+      summary: Get Next Best Learning Action
+      description: Returns the single prioritized recommendation for what the learner should study next.
+      operationId: getLearnerNextAction
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Next action recommendation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Recommendation'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/admin/tenants:
+    post:
+      summary: Provision Tenant
+      description: Superadmin endpoint to register a new tenant and issue its initial API key.
+      operationId: createTenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: Nusadaya Academy
+      responses:
+        '201':
+          description: Tenant created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant:
+                    $ref: '#/components/schemas/Tenant'
+                  apiKey:
+                    type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: APIKey
+      description: Authenticate with tenant API key issued by Unkey.
+
+  responses:
+    BadRequestError:
+      description: Invalid request payload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UnauthorizedError:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: INVALID_PAYLOAD
+            message:
+              type: string
+              example: Field 'event_id' is required.
+            details:
+              type: array
+              items:
+                type: string
+
+    Tenant:
+      type: object
+      required:
+        - id
+        - name
+        - token_balance
+      properties:
+        id:
+          type: string
+          example: ten_nusadaya
+        name:
+          type: string
+          example: Nusadaya Academy
+        token_balance:
+          type: integer
+          example: 100000
+
+    LearningObjectiveInput:
+      type: object
+      required:
+        - id
+        - label
+      properties:
+        id:
+          type: string
+          example: obj_fraction_add
+        label:
+          type: string
+          example: Add and subtract fractions with unlike denominators
+        parent_id:
+          type: string
+          nullable: true
+          example: obj_fraction_basic
+
+    LearningObjective:
+      allOf:
+        - $ref: '#/components/schemas/LearningObjectiveInput'
+        - type: object
+          properties:
+            tenant_id:
+              type: string
+
+    ContentItemInput:
+      type: object
+      required:
+        - id
+        - type
+        - objective_ids
+      properties:
+        id:
+          type: string
+          example: lesson_frac_01
+        type:
+          type: string
+          enum: [text, video, pdf, scorm]
+        source_uri:
+          type: string
+          nullable: true
+          example: https://nusadaya.academy/courses/math/lesson-1
+        objective_ids:
+          type: array
+          items:
+            type: string
+          example: [obj_fraction_add]
+
+    ContentItem:
+      allOf:
+        - $ref: '#/components/schemas/ContentItemInput'
+        - type: object
+          properties:
+            tenant_id:
+              type: string
+
+    AssessmentItemInput:
+      type: object
+      required:
+        - id
+        - prompt_text
+        - item_type
+        - objective_ids
+      properties:
+        id:
+          type: string
+          example: q_math_2041
+        prompt_text:
+          type: string
+          example: What is 1/2 + 1/4?
+        item_type:
+          type: string
+          enum: [mcq, short, essay]
+          example: mcq
+        objective_ids:
+          type: array
+          items:
+            type: string
+          example: [obj_fraction_add]
+
+    AssessmentItem:
+      allOf:
+        - $ref: '#/components/schemas/AssessmentItemInput'
+        - type: object
+          properties:
+            tenant_id:
+              type: string
+
+    AssessmentEventInput:
+      type: object
+      required:
+        - event_id
+        - event_type
+        - external_learner_id
+        - occurred_at
+        - payload
+      properties:
+        event_id:
+          type: string
+          description: Idempotency identifier generated by connector
+          example: evt_nusadaya_qz_981
+        event_type:
+          type: string
+          enum: [assessment.answered, content.viewed, content.completed, enrollment.created]
+          example: assessment.answered
+        external_learner_id:
+          type: string
+          description: Opaque LMS user ID (no PII)
+          example: usr_frappe_883
+        occurred_at:
+          type: string
+          format: date-time
+          example: '2026-09-18T10:30:00Z'
+        payload:
+          type: object
+          required:
+            - item_id
+            - is_correct
+          properties:
+            item_id:
+              type: string
+              example: q_math_2041
+            is_correct:
+              type: boolean
+              example: true
+            raw_response:
+              type: string
+              example: '3/4'
+
+    EventIngestionResult:
+      type: object
+      required:
+        - status
+        - event_id
+      properties:
+        status:
+          type: string
+          enum: [processed, duplicate_ignored]
+          example: processed
+        event_id:
+          type: string
+          example: evt_nusadaya_qz_981
+        mastery_updated:
+          type: boolean
+          example: true
+
+    MasteryRecord:
+      type: object
+      required:
+        - objective_id
+        - score
+        - evidence_count
+        - updated_at
+      properties:
+        objective_id:
+          type: string
+          example: obj_fraction_add
+        score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.85
+        evidence_count:
+          type: integer
+          example: 6
+        confidence:
+          type: string
+          enum: [low, medium, high]
+          example: medium
+        is_gap:
+          type: boolean
+          example: false
+        updated_at:
+          type: string
+          format: date-time
+
+    Recommendation:
+      type: object
+      required:
+        - learner_id
+        - action
+        - target_id
+        - reason_objective_id
+        - explanation
+      properties:
+        learner_id:
+          type: string
+          example: usr_frappe_883
+        action:
+          type: string
+          enum: [review, practice, reassess]
+          example: review
+        target_id:
+          type: string
+          description: ID of ContentItem or AssessmentItem to open
+          example: lesson_frac_01
+        reason_objective_id:
+          type: string
+          example: obj_fraction_add
+        explanation:
+          type: string
+          example: Score on 'Add and subtract fractions' is 0.50 (below 0.70 threshold). Reviewing lesson recommended.
