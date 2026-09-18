@@ -16,6 +16,20 @@ export async function authMiddleware(req: FastifyRequest, reply: FastifyReply) {
   const token = authHeader.replace('Bearer ', '').trim();
   const verification = await unkeyService.verify(token);
 
+  if (verification.code === 'RATE_LIMITED') {
+    if (verification.ratelimit) {
+      reply.header('X-RateLimit-Limit', verification.ratelimit.limit);
+      reply.header('X-RateLimit-Remaining', verification.ratelimit.remaining);
+      reply.header('X-RateLimit-Reset', verification.ratelimit.reset);
+    }
+    return reply.status(429).send({
+      error: {
+        code: 'RATE_LIMITED',
+        message: verification.error || 'Rate limit exceeded. Please retry later.',
+      },
+    });
+  }
+
   if (!verification.valid || !verification.tenantId) {
     return reply.status(401).send({
       error: {

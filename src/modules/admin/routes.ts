@@ -7,6 +7,7 @@ const CreateTenantSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
   token_balance: z.number().int().positive().optional(),
+  rate_limit: z.number().int().positive().optional(),
 });
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -22,7 +23,7 @@ export async function adminRoutes(app: FastifyInstance) {
       });
     }
 
-    const { id, name, token_balance } = parseResult.data;
+    const { id, name, token_balance, rate_limit } = parseResult.data;
 
     const tenant = await prisma.tenant.create({
       data: {
@@ -32,7 +33,11 @@ export async function adminRoutes(app: FastifyInstance) {
       },
     });
 
-    const apiKey = await unkeyService.issueKey(tenant.id, tenant.name);
+    const apiKey = await unkeyService.issueKey(
+      tenant.id,
+      tenant.name,
+      rate_limit ? { ratelimit: { limit: rate_limit, refillRate: rate_limit } } : undefined
+    );
 
     return reply.status(201).send({
       tenant: {
