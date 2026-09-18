@@ -55,8 +55,9 @@ export class RagService {
     if (this.ai) {
       try {
         const response = await this.ai.models.embedContent({
-          model: 'text-embedding-004',
+          model: 'gemini-embedding-001',
           contents: text,
+          config: { outputDimensionality: 768 },
         });
 
         const values = (response as any).embeddings?.[0]?.values || (response as any).embedding?.values;
