@@ -2,6 +2,8 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import path from 'path';
+import fastifyStatic from '@fastify/static';
 import { objectiveRoutes } from './modules/objectives/routes.js';
 import { contentItemRoutes } from './modules/content-items/routes.js';
 import { assessmentItemRoutes } from './modules/assessment-items/routes.js';
@@ -9,6 +11,7 @@ import { eventRoutes } from './modules/events/routes.js';
 import { learnerRoutes } from './modules/learners/routes.js';
 import { adminRoutes } from './modules/admin/routes.js';
 import { chatRoutes } from './modules/chat/routes.js';
+import { analyticsRoutes } from './modules/analytics/routes.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -54,6 +57,12 @@ export async function buildApp() {
     },
   });
 
+  // Register static assets
+  await app.register(fastifyStatic, {
+    root: path.join(process.cwd(), 'public'),
+    prefix: '/public/',
+  });
+
   // Health check route
   app.get('/health', async () => {
     return {
@@ -63,8 +72,28 @@ export async function buildApp() {
     };
   });
 
+  // Web Frontend Portal Routes
+  app.get('/dashboard', async (req, reply) => {
+    return reply.sendFile('dashboard/index.html');
+  });
+  app.get('/dashboard/', async (req, reply) => {
+    return reply.sendFile('dashboard/index.html');
+  });
+
+  app.get('/superadmin', async (req, reply) => {
+    return reply.sendFile('superadmin/index.html');
+  });
+  app.get('/superadmin/', async (req, reply) => {
+    return reply.sendFile('superadmin/index.html');
+  });
+
+  app.get('/', async (req, reply) => {
+    return reply.redirect('/dashboard');
+  });
+
   // Register feature modules
   await app.register(adminRoutes);
+  await app.register(analyticsRoutes);
   await app.register(objectiveRoutes);
   await app.register(contentItemRoutes);
   await app.register(assessmentItemRoutes);

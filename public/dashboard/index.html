@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>getlearn.ai | Client Intelligence Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0B0F19;
+      --bg-surface: #111827;
+      --bg-surface-elevated: #1F2937;
+      --border-subtle: #1F2937;
+      --border-strong: #374151;
+      --text-primary: #F9FAFB;
+      --text-secondary: #9CA3AF;
+      --text-muted: #6B7280;
+      --primary: #6366F1;
+      --primary-hover: #4F46E5;
+      --primary-light: rgba(99, 102, 241, 0.15);
+      --success: #10B981;
+      --success-light: rgba(16, 185, 129, 0.15);
+      --warning: #F59E0B;
+      --warning-light: rgba(245, 158, 11, 0.15);
+      --danger: #EF4444;
+      --danger-light: rgba(239, 68, 68, 0.15);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    /* Layout */
+    .app-header {
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0.875rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 0.875rem;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, #6366F1 0%, #A855F7 100%);
+      color: white;
+      font-weight: 700;
+      font-size: 1.125rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-md);
+      letter-spacing: -0.5px;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+    .brand-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      letter-spacing: -0.25px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .brand-pill {
+      font-size: 0.7rem;
+      background: var(--primary-light);
+      color: #818CF8;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .auth-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .input-key {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      color: var(--text-primary);
+      padding: 0.45rem 0.875rem;
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      width: 220px;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .input-key:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    }
+
+    .btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.45rem 1rem;
+      border-radius: var(--radius-sm);
+      font-weight: 500;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s ease-in-out;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .btn:hover { background: var(--primary-hover); }
+    .btn-secondary {
+      background: var(--bg-surface-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-strong);
+    }
+    .btn-secondary:hover {
+      color: var(--text-primary);
+      background: #2D3748;
+    }
+
+    .token-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.775rem;
+      color: #34D399;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Container */
+    .main-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Nav Tabs */
+    .tabs-nav {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      margin-bottom: 2rem;
+      padding-bottom: 0.25rem;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.925rem;
+      font-weight: 500;
+      padding: 0.6rem 1.1rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .tab-btn.active {
+      color: var(--primary);
+      background: var(--primary-light);
+      font-weight: 600;
+    }
+
+    /* Stat Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--primary), transparent);
+    }
+    .stat-label {
+      font-size: 0.775rem;
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    .stat-value {
+      font-size: 1.85rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text-primary);
+    }
+    .stat-subtext {
+      font-size: 0.775rem;
+      color: var(--text-secondary);
+      margin-top: 0.25rem;
+    }
+
+    /* Panels & Tables */
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    .panel-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .panel-body {
+      padding: 1.5rem;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      text-align: left;
+    }
+    .data-table th {
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 0.775rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .data-table td {
+      padding: 0.875rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-secondary);
+    }
+    .data-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-primary);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.725rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .badge-success { background: var(--success-light); color: #34D399; }
+    .badge-warning { background: var(--warning-light); color: #FBBF24; }
+    .badge-danger { background: var(--danger-light); color: #F87171; }
+    .badge-info { background: var(--primary-light); color: #818CF8; }
+
+    /* Progress bar */
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: var(--bg-surface-elevated);
+      border-radius: 9999px;
+      overflow: hidden;
+      margin-top: 0.35rem;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, #6366F1, #10B981);
+      transition: width 0.5s ease-in-out;
+    }
+
+    /* Chat Sandbox */
+    .chat-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 1.5rem;
+      height: 650px;
+    }
+    .chat-sidebar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .chat-window {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-messages {
+      flex: 1;
+      padding: 1.5rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .message-bubble {
+      max-width: 80%;
+      padding: 0.85rem 1.1rem;
+      border-radius: var(--radius-md);
+      font-size: 0.885rem;
+      line-height: 1.5;
+    }
+    .message-user {
+      align-self: flex-end;
+      background: var(--primary);
+      color: white;
+      border-bottom-right-radius: 2px;
+    }
+    .message-assistant {
+      align-self: flex-start;
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-strong);
+      border-bottom-left-radius: 2px;
+    }
+    .chat-input-bar {
+      padding: 1rem;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      gap: 0.75rem;
+      background: var(--bg-surface);
+    }
+    .chat-input {
+      flex: 1;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      color: var(--text-primary);
+      padding: 0.65rem 1rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .chat-input:focus { border-color: var(--primary); }
+
+    /* Forms */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .form-label {
+      font-size: 0.775rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .form-select {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      color: var(--text-primary);
+      padding: 0.5rem 0.75rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      outline: none;
+    }
+    .toggle-switch {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-backdrop.active { display: flex; }
+    .modal-content {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      width: 90%;
+      max-width: 600px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 1.75rem;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .modal-title { font-size: 1.15rem; font-weight: 600; }
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.25rem;
+      cursor: pointer;
+    }
+
+    .recommendation-box {
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: var(--radius-md);
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="brand-group">
+      <div class="logo-badge">GL</div>
+      <div>
+        <div class="brand-title">
+          getlearn.ai <span class="brand-pill">Client Portal</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-controls">
+      <div class="token-chip" id="tokenChip">
+        <span>⚡</span>
+        <span id="tenantTokenBalance">100,000</span> credits
+      </div>
+      <input
+        type="text"
+        id="apiKeyInput"
+        class="input-key"
+        placeholder="Bearer API Key"
+        value="dev-nusadaya-key"
+      />
+      <button class="btn" onclick="fetchDashboardData()">
+        <span>Refresh</span>
+      </button>
+      <a href="/superadmin" class="btn btn-secondary">
+        Superadmin &rarr;
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-container">
+
+    <!-- Navigation Tabs -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('overview')">
+        <span>📊</span> Overview & Analytics
+      </button>
+      <button class="tab-btn" onclick="switchTab('learners')">
+        <span>👥</span> Learner Intelligence
+      </button>
+      <button class="tab-btn" onclick="switchTab('coach')">
+        <span>🤖</span> AI Study Coach Sandbox
+      </button>
+      <button class="tab-btn" onclick="switchTab('rag')">
+        <span>🔍</span> Vector RAG Explorer
+      </button>
+    </div>
+
+    <!-- TAB 1: OVERVIEW & ANALYTICS -->
+    <section id="tab-overview">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Tracked Learners</div>
+          <div class="stat-value" id="statLearners">-</div>
+          <div class="stat-subtext">Total active student entities</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Learning Objectives</div>
+          <div class="stat-value" id="statObjectives">-</div>
+          <div class="stat-subtext">Knowledge taxonomy nodes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Assessment Events</div>
+          <div class="stat-value" id="statEvents">-</div>
+          <div class="stat-subtext">Calibrated event telemetry</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Average Mastery</div>
+          <div class="stat-value" id="statAvgMastery">-</div>
+          <div class="stat-subtext">BKT calibrated competency</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Skill Gaps</div>
+          <div class="stat-value" id="statGaps" style="color: #F87171;">-</div>
+          <div class="stat-subtext" id="statGapRate">Mastery &lt; 0.70 threshold</div>
+        </div>
+      </div>
+
+      <!-- Objective Competency Distribution -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Objective Mastery Breakdown</div>
+          <span class="badge badge-info">Multi-tenant Isolation Active</span>
+        </div>
+        <div class="panel-body">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Objective ID</th>
+                <th>Concept Name</th>
+                <th>Learners Assessed</th>
+                <th>Average Competency</th>
+                <th>Gap Incidence</th>
+              </tr>
+            </thead>
+            <tbody id="objectivesTableBody">
+              <tr><td colspan="5" style="text-align: center;">Loading analytics...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: LEARNERS INTELLIGENCE -->
+    <section id="tab-learners" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Learners & Dynamic Interventions</div>
+          <button class="btn btn-secondary" onclick="loadLearners()">Refresh Roster</button>
+        </div>
+        <div class="panel-body">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Learner ID (External Ref)</th>
+                <th>Total Events</th>
+                <th>Mastery Objectives</th>
+                <th>Average Score</th>
+                <th>Status / Gaps</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="learnersTableBody">
+              <tr><td colspan="6" style="text-align: center;">Loading learners...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: AI STUDY COACH SANDBOX -->
+    <section id="tab-coach" style="display: none;">
+      <div class="chat-layout">
+        <!-- Sidebar -->
+        <div class="chat-sidebar">
+          <div class="form-group">
+            <label class="form-label">Select Learner Context</label>
+            <select id="chatLearnerSelect" class="form-select">
+              <option value="student_dev_01">student_dev_01</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Active Learning Objective</label>
+            <select id="chatObjectiveSelect" class="form-select">
+              <option value="obj_py_loops">obj_py_loops (Python Loops)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-top: 0.5rem;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="chatGuardrailToggle" checked />
+              <span>Assessment Active Mode (Socratic Guardrail)</span>
+            </label>
+            <small style="color: var(--text-muted); font-size: 0.725rem; margin-top: 0.2rem;">
+              When enabled, refuses direct answers to homework/quiz questions and supplies pedagogical scaffolding.
+            </small>
+          </div>
+          <div class="form-group" style="margin-top: 0.5rem;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="chatVoiceToggle" />
+              <span>Fish Audio TTS Voice Enabled</span>
+            </label>
+          </div>
+          <button class="btn" onclick="startNewChatSession()" style="margin-top: auto;">
+            <span>+</span> New Session
+          </button>
+        </div>
+
+        <!-- Chat Window -->
+        <div class="chat-window">
+          <div class="panel-header">
+            <div class="panel-title" id="chatSessionTitle">Session: Not started</div>
+            <span class="badge badge-success" id="chatStatusBadge">Ready</span>
+          </div>
+          <div class="chat-messages" id="chatMessagesBox">
+            <div class="message-bubble message-assistant">
+              Hello! I am your AI Socratic Study Coach. Ask me any question or request hints on Python concepts.
+            </div>
+          </div>
+          <div class="chat-input-bar">
+            <input
+              type="text"
+              id="chatMessageInput"
+              class="chat-input"
+              placeholder="Ask a question (e.g. 'Can you give me the answer for the while loop quiz?')..."
+              onkeydown="if(event.key === 'Enter') sendChatMessage()"
+            />
+            <button class="btn" onclick="sendChatMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: VECTOR RAG EXPLORER -->
+    <section id="tab-rag" style="display: none;">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">pgvector Semantic Knowledge Search</div>
+          <span class="badge badge-info">768-dim Vector Embeddings</span>
+        </div>
+        <div class="panel-body">
+          <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
+            <input
+              type="text"
+              id="ragSearchQuery"
+              class="chat-input"
+              placeholder="Search curriculum concepts (e.g. 'how to break infinite while loops', 'conditional logic')..."
+              value="infinite loop condition"
+              onkeydown="if(event.key === 'Enter') runRagSearch()"
+            />
+            <button class="btn" onclick="runRagSearch()">Search Vectors</button>
+          </div>
+
+          <div id="ragResultsContainer">
+            <div style="color: var(--text-muted); font-size: 0.875rem;">
+              Perform a search to test live pgvector cosine similarity ranking.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Learner Detail & Next Action Modal -->
+  <div class="modal-backdrop" id="learnerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="modalLearnerTitle">Learner Profile</div>
+        <button class="close-btn" onclick="closeModal()">&times;</button>
+      </div>
+      <div id="modalContentBody">
+        Loading profile details...
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentSessionId = null;
+
+    function getApiKey() {
+      return document.getElementById('apiKeyInput').value.trim();
+    }
+
+    function switchTab(tabId) {
+      const tabs = ['overview', 'learners', 'coach', 'rag'];
+      tabs.forEach(t => {
+        document.getElementById(`tab-${t}`).style.display = (t === tabId) ? 'block' : 'none';
+      });
+
+      document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
+        if (tabs[idx] === tabId) btn.classList.add('active');
+        else btn.classList.remove('active');
+      });
+
+      if (tabId === 'learners') loadLearners();
+    }
+
+    async function fetchDashboardData() {
+      const apiKey = getApiKey();
+      try {
+        const res = await fetch('/v1/analytics/overview', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        // Update Tenant Info
+        document.getElementById('tenantTokenBalance').textContent = Number(data.tenant.token_balance).toLocaleString();
+        
+        // Update Stats
+        document.getElementById('statLearners').textContent = data.summary.total_learners;
+        document.getElementById('statObjectives').textContent = data.summary.total_objectives;
+        document.getElementById('statEvents').textContent = data.summary.total_events;
+        document.getElementById('statAvgMastery').textContent = `${(data.summary.average_mastery_score * 100).toFixed(1)}%`;
+        document.getElementById('statGaps').textContent = data.summary.active_gap_count;
+        document.getElementById('statGapRate').textContent = `${data.summary.gap_percentage}% of measured objectives`;
+
+        // Update Objectives Table
+        const tbody = document.getElementById('objectivesTableBody');
+        tbody.innerHTML = '';
+        if (data.objective_distribution.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No objective data yet. Ingest assessment events to populate.</td></tr>';
+        } else {
+          data.objective_distribution.forEach(obj => {
+            const pct = Math.round(obj.avg_score * 100);
+            const gapBadge = obj.gap_count > 0 
+              ? `<span class="badge badge-danger">${obj.gap_count} gaps (${Math.round(obj.gap_rate * 100)}%)</span>`
+              : `<span class="badge badge-success">Optimal</span>`;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td><code style="font-family: monospace; color: #818CF8;">${obj.objective_id}</code></td>
+              <td style="font-weight: 500; color: #F9FAFB;">${obj.label}</td>
+              <td>${obj.learner_count}</td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                  <span style="width: 35px; font-weight: 600;">${pct}%</span>
+                  <div class="progress-bar-bg" style="max-width: 150px;">
+                    <div class="progress-bar-fill" style="width: ${pct}%;"></div>
+                  </div>
+                </div>
+              </td>
+              <td>${gapBadge}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+      } catch (err) {
+        console.error("Dashboard error:", err);
+      }
+    }
+
+    async function loadLearners() {
+      const apiKey = getApiKey();
+      const tbody = document.getElementById('learnersTableBody');
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Loading learners...</td></tr>';
+
+      try {
+        const res = await fetch('/v1/learners', {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        const data = await res.json();
+        tbody.innerHTML = '';
+
+        if (!data.learners || data.learners.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No learners found.</td></tr>';
+          return;
+        }
+
+        // Also update chat select
+        const chatSelect = document.getElementById('chatLearnerSelect');
+        chatSelect.innerHTML = '';
+
+        data.learners.forEach(l => {
+          // Select option
+          const opt = document.createElement('option');
+          opt.value = l.external_ref;
+          opt.textContent = `${l.external_ref} (${l.gap_count} gaps)`;
+          chatSelect.appendChild(opt);
+
+          // Table Row
+          const scoreText = l.avg_mastery_score !== null ? `${Math.round(l.avg_mastery_score * 100)}%` : 'N/A';
+          const statusBadge = l.gap_count > 0
+            ? `<span class="badge badge-warning">${l.gap_count} Active Gaps</span>`
+            : `<span class="badge badge-success">On Track</span>`;
+
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><strong style="color: #F9FAFB;">${l.external_ref}</strong></td>
+            <td>${l.event_count} events</td>
+            <td>${l.mastery_record_count} tracked</td>
+            <td style="font-weight: 600;">${scoreText}</td>
+            <td>${statusBadge}</td>
+            <td>
+              <button class="btn btn-secondary" style="padding: 0.25rem 0.6rem; font-size: 0.775rem;" onclick="viewLearnerDetails('${l.external_ref}')">
+                Intervention &rarr;
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="color: #EF4444; text-align: center;">Error loading learners: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function viewLearnerDetails(externalRef) {
+      const apiKey = getApiKey();
+      document.getElementById('modalLearnerTitle').textContent = `Learner Intelligence: ${externalRef}`;
+      const modalBody = document.getElementById('modalContentBody');
+      modalBody.innerHTML = '<div style="text-align: center; padding: 2rem;">Analyzing knowledge model & next actions...</div>';
+      document.getElementById('learnerModal').classList.add('active');
+
+      try {
+        const [masteryRes, nextActionRes] = await Promise.all([
+          fetch(`/v1/learners/${externalRef}/mastery`, { headers: { 'Authorization': `Bearer ${apiKey}` } }),
+          fetch(`/v1/learners/${externalRef}/next-action`, { headers: { 'Authorization': `Bearer ${apiKey}` } })
+        ]);
+
+        const masteryData = await masteryRes.json();
+        const nextActionData = await nextActionRes.json();
+
+        let html = `
+          <h4 style="margin-bottom: 0.5rem; font-size: 0.95rem;">Competency Mastery Records</h4>
+          <table class="data-table" style="margin-bottom: 1.25rem;">
+            <thead>
+              <tr>
+                <th>Objective</th>
+                <th>Score</th>
+                <th>Confidence</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        masteryData.mastery.forEach(m => {
+          const scorePct = Math.round(m.score * 100);
+          const gapBadge = m.is_gap 
+            ? '<span class="badge badge-danger">Skill Gap</span>' 
+            : '<span class="badge badge-success">Mastered</span>';
+
+          html += `
+            <tr>
+              <td>${m.label}</td>
+              <td><strong>${scorePct}%</strong></td>
+              <td><span class="badge badge-info">${m.confidence}</span></td>
+              <td>${gapBadge}</td>
+            </tr>
+          `;
+        });
+        html += '</tbody></table>';
+
+        html += `
+          <div class="recommendation-box">
+            <h4 style="color: #818CF8; font-size: 0.95rem; margin-bottom: 0.4rem;">
+              Targeted Next Action: ${nextActionData.action.toUpperCase()}
+            </h4>
+            <p style="font-size: 0.85rem; color: #D1D5DB; margin-bottom: 0.5rem;">
+              <strong>Reason:</strong> ${nextActionData.reason}
+            </p>
+        `;
+
+        if (nextActionData.recommended_content) {
+          html += `
+            <div style="background: rgba(0,0,0,0.25); padding: 0.75rem; border-radius: 6px; font-size: 0.825rem;">
+              <div><strong>Lesson:</strong> ${nextActionData.recommended_content.title}</div>
+              <div style="color: #9CA3AF; margin-top: 0.25rem;"><em>${nextActionData.recommended_content.excerpt || ''}</em></div>
+            </div>
+          `;
+        }
+
+        html += '</div>';
+        modalBody.innerHTML = html;
+      } catch (err) {
+        modalBody.innerHTML = `<div style="color: #EF4444;">Error fetching learner details: ${err.message}</div>`;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('learnerModal').classList.remove('active');
+    }
+
+    // AI Study Coach
+    async function startNewChatSession() {
+      const apiKey = getApiKey();
+      const learnerId = document.getElementById('chatLearnerSelect').value;
+      const objectiveId = document.getElementById('chatObjectiveSelect').value;
+
+      try {
+        const res = await fetch('/v1/chat/sessions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            learner_id: learnerId,
+            objective_id: objectiveId
+          })
+        });
+        const data = await res.json();
+        currentSessionId = data.session_id;
+        document.getElementById('chatSessionTitle').textContent = `Session: ${currentSessionId.substring(0, 16)}...`;
+        
+        const box = document.getElementById('chatMessagesBox');
+        box.innerHTML = `
+          <div class="message-bubble message-assistant">
+            New session started for <strong>${learnerId}</strong> targeting <strong>${objectiveId}</strong>. How can I help you learn this concept?
+          </div>
+        `;
+      } catch (err) {
+        alert("Failed to start session: " + err.message);
+      }
+    }
+
+    async function sendChatMessage() {
+      const input = document.getElementById('chatMessageInput');
+      const message = input.value.trim();
+      if (!message) return;
+
+      if (!currentSessionId) {
+        await startNewChatSession();
+      }
+
+      const apiKey = getApiKey();
+      const box = document.getElementById('chatMessagesBox');
+      
+      // Append user bubble
+      const userBubble = document.createElement('div');
+      userBubble.className = 'message-bubble message-user';
+      userBubble.textContent = message;
+      box.appendChild(userBubble);
+      input.value = '';
+      box.scrollTop = box.scrollHeight;
+
+      // Check toggles
+      const guardrail = document.getElementById('chatGuardrailToggle').checked;
+      const voice = document.getElementById('chatVoiceToggle').checked;
+
+      // Loading bubble
+      const loadingBubble = document.createElement('div');
+      loadingBubble.className = 'message-bubble message-assistant';
+      loadingBubble.textContent = 'Thinking Socratic guidance...';
+      box.appendChild(loadingBubble);
+      box.scrollTop = box.scrollHeight;
+
+      try {
+        const url = `/v1/chat/sessions/${currentSessionId}/messages${voice ? '?voice=true' : ''}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            message: message,
+            is_assessment_active: guardrail
+          })
+        });
+
+        const data = await res.json();
+        loadingBubble.innerHTML = `
+          <div>${data.response}</div>
+          <div style="font-size: 0.725rem; color: #818CF8; margin-top: 0.35rem; display: flex; justify-content: space-between;">
+            <span>${data.socratic_guardrail ? '🛡️ Socratic Guardrail Active' : '💡 Open Study Mode'}</span>
+            <span>⚡ ${data.tokens_used} tokens</span>
+          </div>
+        `;
+
+        if (data.voice_audio_url) {
+          const audio = document.createElement('audio');
+          audio.controls = true;
+          audio.src = data.voice_audio_url;
+          audio.style.marginTop = '0.5rem';
+          audio.style.width = '100%';
+          loadingBubble.appendChild(audio);
+        }
+
+        fetchDashboardData(); // update token balance
+      } catch (err) {
+        loadingBubble.textContent = "Error: " + err.message;
+      }
+      box.scrollTop = box.scrollHeight;
+    }
+
+    // RAG Explorer
+    async function runRagSearch() {
+      const apiKey = getApiKey();
+      const query = document.getElementById('ragSearchQuery').value.trim();
+      const container = document.getElementById('ragResultsContainer');
+      container.innerHTML = '<div style="color: var(--text-muted);">Executing vector similarity ranking via pgvector...</div>';
+
+      try {
+        const res = await fetch('/v1/content-items/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({ query, limit: 5 })
+        });
+        const data = await res.json();
+        
+        if (!data.results || data.results.length === 0) {
+          container.innerHTML = '<div style="color: var(--text-muted);">No matching content chunks found.</div>';
+          return;
+        }
+
+        let html = '';
+        data.results.forEach((r, idx) => {
+          const simPct = Math.round(r.similarity * 100);
+          html += `
+            <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 0.75rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                <span style="font-weight: 600; color: #F9FAFB;">#${idx + 1} ${r.content_title}</span>
+                <span class="badge badge-success">${simPct}% Vector Similarity</span>
+              </div>
+              <p style="font-size: 0.85rem; color: #D1D5DB; line-height: 1.4; margin-bottom: 0.4rem;">
+                ${r.content}
+              </p>
+              <div style="font-size: 0.75rem; color: #9CA3AF;">
+                Content Item ID: <code style="font-family: monospace;">${r.content_item_id}</code> | Chunk: ${r.chunk_index}
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      } catch (err) {
+        container.innerHTML = `<div style="color: #EF4444;">Search failed: ${err.message}</div>`;
+      }
+    }
+
+    // Initial load
+    fetchDashboardData();
+  </script>
+</body>
+</html>

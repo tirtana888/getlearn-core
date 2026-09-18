@@ -16,6 +16,44 @@ export async function learnerRoutes(app: FastifyInstance) {
     });
   }
 
+  // GET /v1/learners - list all learners for current tenant
+  app.get('/v1/learners', async (req) => {
+    const learners = await prisma.learner.findMany({
+      where: { tenantId: req.tenantId },
+      include: {
+        masteryRecords: {
+          include: { objective: true },
+        },
+        _count: {
+          select: { assessmentEvents: true, chatSessions: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      learners: learners.map((l) => {
+        const total = l.masteryRecords.length;
+        const avgScore =
+          total > 0
+            ? l.masteryRecords.reduce((acc, r) => acc + r.score, 0) / total
+            : null;
+        const gapCount = l.masteryRecords.filter((r) => r.score < 0.7).length;
+
+        return {
+          id: l.id,
+          external_ref: l.externalRef,
+          created_at: l.createdAt.toISOString(),
+          event_count: l._count.assessmentEvents,
+          chat_session_count: l._count.chatSessions,
+          mastery_record_count: total,
+          avg_mastery_score: avgScore !== null ? Math.round(avgScore * 1000) / 1000 : null,
+          gap_count: gapCount,
+        };
+      }),
+    };
+  });
+
   // GET /v1/learners/:id/mastery
   app.get('/v1/learners/:id/mastery', async (req, reply) => {
     const { id } = req.params as { id: string };

@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>getlearn.ai | Superadmin & Multi-tenant Control Plane</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #080C14;
+      --bg-surface: #0F172A;
+      --bg-surface-elevated: #1E293B;
+      --border-subtle: #1E293B;
+      --border-strong: #334155;
+      --text-primary: #F8FAFC;
+      --text-secondary: #94A3B8;
+      --text-muted: #64748B;
+      --primary: #8B5CF6;
+      --primary-hover: #7C3AED;
+      --primary-light: rgba(139, 92, 246, 0.15);
+      --success: #10B981;
+      --success-light: rgba(16, 185, 129, 0.15);
+      --warning: #F59E0B;
+      --warning-light: rgba(245, 158, 11, 0.15);
+      --danger: #EF4444;
+      --danger-light: rgba(239, 68, 68, 0.15);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    /* Header */
+    .app-header {
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 0.875rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 0.875rem;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
+      color: white;
+      font-weight: 700;
+      font-size: 1.125rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: var(--radius-md);
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+    }
+    .brand-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .brand-pill {
+      font-size: 0.7rem;
+      background: var(--primary-light);
+      color: #A78BFA;
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.45rem 1rem;
+      border-radius: var(--radius-sm);
+      font-weight: 500;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      text-decoration: none;
+      transition: all 0.15s ease-in-out;
+    }
+    .btn:hover { background: var(--primary-hover); }
+    .btn-secondary {
+      background: var(--bg-surface-elevated);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-strong);
+    }
+    .btn-secondary:hover {
+      color: var(--text-primary);
+      background: #334155;
+    }
+
+    /* Container */
+    .main-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Stat Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      position: relative;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--primary), transparent);
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+    .stat-value {
+      font-size: 1.85rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    /* Grid layout */
+    .dashboard-split {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.5rem;
+    }
+
+    /* Panel */
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    .panel-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .panel-body {
+      padding: 1.5rem;
+    }
+
+    /* Tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+    .data-table th {
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .data-table td {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-secondary);
+    }
+    .data-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-primary);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.725rem;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .badge-primary { background: var(--primary-light); color: #C4B5FD; }
+    .badge-success { background: var(--success-light); color: #34D399; }
+    .badge-warning { background: var(--warning-light); color: #FBBF24; }
+
+    /* Form */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      margin-bottom: 1.1rem;
+    }
+    .form-label {
+      font-size: 0.775rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .form-input {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      color: var(--text-primary);
+      padding: 0.6rem 0.875rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      outline: none;
+    }
+    .form-input:focus { border-color: var(--primary); }
+
+    .key-reveal-card {
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: var(--radius-md);
+      padding: 1.25rem;
+      margin-top: 1rem;
+      display: none;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-backdrop.active { display: flex; }
+    .modal-content {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-lg);
+      width: 90%;
+      max-width: 450px;
+      padding: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="brand-group">
+      <div class="logo-badge">GL</div>
+      <div class="brand-title">
+        getlearn.ai <span class="brand-pill">Superadmin Control Plane</span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <a href="/dashboard" class="btn btn-secondary">
+        &larr; Client Portal
+      </a>
+      <a href="/docs" target="_blank" class="btn btn-secondary">
+        Swagger / OpenAPI &nearr;
+      </a>
+      <button class="btn" onclick="fetchTenants()">
+        Refresh Fleet
+      </button>
+    </div>
+  </header>
+
+  <main class="main-container">
+
+    <!-- Observability Metrics -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Active Tenants</div>
+        <div class="stat-value" id="statTenantCount">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Global Learners</div>
+        <div class="stat-value" id="statGlobalLearners">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Global Events Ingested</div>
+        <div class="stat-value" id="statGlobalEvents">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active AI Chat Sessions</div>
+        <div class="stat-value" id="statGlobalChats">-</div>
+      </div>
+    </div>
+
+    <div class="dashboard-split">
+
+      <!-- Tenants Table -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Multi-Tenant Fleet Observability</div>
+          <span class="badge badge-success">PostgreSQL Row-Level Isolated</span>
+        </div>
+        <div class="panel-body" style="padding: 0;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th>Token Credits</th>
+                <th>Learners</th>
+                <th>Events</th>
+                <th>Mastery Recs</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tenantsTableBody">
+              <tr><td colspan="6" style="text-align: center; padding: 2rem;">Loading tenant fleet...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Provision New Tenant -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">Provision New Tenant</div>
+        </div>
+        <div class="panel-body">
+          <form onsubmit="provisionTenant(event)">
+            <div class="form-group">
+              <label class="form-label">Organization Name</label>
+              <input type="text" id="newTenantName" class="form-input" placeholder="e.g. EduTech Global Academy" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Tenant ID (Slug / Prefix)</label>
+              <input type="text" id="newTenantId" class="form-input" placeholder="e.g. ten_edutech (optional)" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Initial Token Balance</label>
+              <input type="number" id="newTenantBalance" class="form-input" value="100000" min="1000" step="1000" required />
+            </div>
+
+            <button type="submit" class="btn" style="width: 100%; justify-content: center;">
+              Provision Tenant & Generate Key
+            </button>
+          </form>
+
+          <!-- Key Reveal Card -->
+          <div class="key-reveal-card" id="keyRevealBox">
+            <h4 style="color: #A78BFA; font-size: 0.9rem; margin-bottom: 0.5rem;">Tenant Created Successfully!</h4>
+            <p style="font-size: 0.775rem; color: #CBD5E1; margin-bottom: 0.5rem;">
+              Copy this API Key now. Use it as Bearer token in requests.
+            </p>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input type="text" id="generatedKeyInput" readonly class="form-input" style="font-family: monospace; font-size: 0.75rem; flex: 1;" />
+              <button class="btn btn-secondary" onclick="copyApiKey()">Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Top Up Modal -->
+  <div class="modal-backdrop" id="topupModal">
+    <div class="modal-content">
+      <h3 style="margin-bottom: 0.75rem;" id="topupModalTitle">Top Up Token Credits</h3>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.25rem;">
+        Add token credits to this tenant to enable continued AI chat tutoring and pgvector searches.
+      </p>
+      <input type="hidden" id="topupTenantId" />
+      <div class="form-group">
+        <label class="form-label">Credit Amount</label>
+        <input type="number" id="topupAmountInput" class="form-input" value="50000" min="1000" step="5000" />
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+        <button class="btn btn-secondary" onclick="closeTopupModal()">Cancel</button>
+        <button class="btn" onclick="executeTopup()">Confirm Top Up</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function fetchTenants() {
+      const tbody = document.getElementById('tenantsTableBody');
+      try {
+        const res = await fetch('/v1/admin/tenants');
+        const data = await res.json();
+
+        const tenants = data.tenants || [];
+        tbody.innerHTML = '';
+
+        let totalLearners = 0;
+        let totalEvents = 0;
+        let totalChats = 0;
+
+        tenants.forEach(t => {
+          totalLearners += t.stats.learners;
+          totalEvents += t.stats.events;
+          totalChats += t.stats.chat_sessions;
+
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>
+              <div style="font-weight: 600; color: #F8FAFC;">${t.name}</div>
+              <div style="font-family: monospace; font-size: 0.75rem; color: #64748B;">${t.id}</div>
+            </td>
+            <td>
+              <span class="badge badge-success">⚡ ${Number(t.token_balance).toLocaleString()}</span>
+            </td>
+            <td>${t.stats.learners}</td>
+            <td>${t.stats.events}</td>
+            <td>${t.stats.mastery_records}</td>
+            <td>
+              <button class="btn btn-secondary" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="openTopupModal('${t.id}', '${t.name}')">
+                + Credits
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+
+        document.getElementById('statTenantCount').textContent = tenants.length;
+        document.getElementById('statGlobalLearners').textContent = totalLearners;
+        document.getElementById('statGlobalEvents').textContent = totalEvents;
+        document.getElementById('statGlobalChats').textContent = totalChats;
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="color: #EF4444; padding: 1.5rem;">Error loading fleet: ${err.message}</td></tr>`;
+      }
+    }
+
+    async function provisionTenant(e) {
+      e.preventDefault();
+      const name = document.getElementById('newTenantName').value.trim();
+      const id = document.getElementById('newTenantId').value.trim() || undefined;
+      const balance = parseInt(document.getElementById('newTenantBalance').value, 10);
+
+      try {
+        const res = await fetch('/v1/admin/tenants', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, id, token_balance: balance })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || 'Provisioning failed');
+
+        const box = document.getElementById('keyRevealBox');
+        const keyInput = document.getElementById('generatedKeyInput');
+        keyInput.value = data.apiKey;
+        box.style.display = 'block';
+
+        fetchTenants();
+      } catch (err) {
+        alert("Failed to provision: " + err.message);
+      }
+    }
+
+    function copyApiKey() {
+      const input = document.getElementById('generatedKeyInput');
+      input.select();
+      navigator.clipboard.writeText(input.value);
+      alert("API Key copied to clipboard!");
+    }
+
+    function openTopupModal(tenantId, name) {
+      document.getElementById('topupTenantId').value = tenantId;
+      document.getElementById('topupModalTitle').textContent = `Top Up: ${name}`;
+      document.getElementById('topupModal').classList.add('active');
+    }
+
+    function closeTopupModal() {
+      document.getElementById('topupModal').classList.remove('active');
+    }
+
+    async function executeTopup() {
+      const tenantId = document.getElementById('topupTenantId').value;
+      const amount = parseInt(document.getElementById('topupAmountInput').value, 10);
+
+      try {
+        const res = await fetch(`/v1/admin/tenants/${tenantId}/credits`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        closeTopupModal();
+        fetchTenants();
+      } catch (err) {
+        alert("Top-up failed: " + err.message);
+      }
+    }
+
+    fetchTenants();
+  </script>
+</body>
+</html>
