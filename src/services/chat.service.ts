@@ -96,8 +96,8 @@ export class ChatService {
 
     // 3. Create Automated Opening Message
     const openingContent = focusObjectiveLabel
-      ? `Halo! Saya AI Study Coach Anda. Berdasarkan catatan progres belajar Anda, saya siap mendampingi Anda mendalami materi "${focusObjectiveLabel}". Ada konsep atau bagian yang ingin kita bahas bersama hari ini?`
-      : 'Halo! Saya AI Study Coach getlearn Anda. Ada materi pelajaran atau konsep yang ingin kita diskusikan hari ini?';
+      ? `Hai! Aku Study Coach-mu. Kita lagi di materi "${focusObjectiveLabel}". Mau bahas bagian yang mana, atau ada yang bikin bingung?`
+      : 'Hai! Aku Study Coach-mu. Ada materi atau konsep yang mau kita bahas?';
 
     await prisma.chatMessage.create({
       data: {
@@ -283,26 +283,51 @@ export class ChatService {
 
     let providerUsed: 'gemini' | 'deepseek' | null = null;
 
-    if (this.hasAnyProvider() && contextText.trim()) {
-      const systemPrompt = `Anda adalah AI Study Coach getlearn.ai yang ramah, mendidik, dan membimbing.
-ATURAN GUARDRAIL KETAT:
-1. Wajib menjawab HANYA berdasarkan materi pelajaran yang diberikan di bawah.
-2. Jika informasi tidak ada di dalam materi pelajaran, katakan secara jujur dan sopan: "Materi ini belum tercakup dalam modul pelajaran Anda." JANGAN mengarang jawaban dari pengetahuan umum.
-3. ${
+    // Name of the lesson the session is scoped to, so "ini materi apa?" is answerable even when
+    // no passage matched.
+    let lessonLabel: string | undefined;
+    if (session.scope === 'objective' && session.objectiveIds.length > 0) {
+      lessonLabel = (
+        await prisma.learningObjective.findFirst({
+          where: { tenantId, id: { in: session.objectiveIds } },
+          select: { label: true },
+        })
+      )?.label;
+    }
+
+    // The model is called even when no passage matched: a greeting, a thank-you or a vague
+    // "gimana" deserves a natural reply, not a canned refusal. It is told plainly when nothing
+    // matched, so it cannot pretend to quote material it was not given.
+    if (this.hasAnyProvider()) {
+      const systemPrompt = `Kamu adalah Study Coach di getlearn.ai: teman belajar yang santai, sabar, dan to the point. Ngobrol seperti mentor yang enak diajak bicara, bukan seperti robot atau buku teks.
+
+GAYA BICARA
+- Bahasa Indonesia sehari-hari yang tetap sopan. Pakai "aku" dan "kamu". Hangat boleh, lebay jangan.
+- Langsung ke jawaban. Jangan membuka dengan "Halo!", "Pertanyaan bagus!" atau pujian lain, kecuali memang sedang membalas sapaan.
+- Singkat: biasanya 2-4 kalimat atau paragraf pendek. Panjangkan hanya kalau diminta atau memang butuh langkah berurutan. Pakai poin/daftar hanya untuk hal yang berurutan.
+- Kalau pesannya samar atau cuma satu-dua kata ("gimana", "lanjut", "terus?"), tebak maksudnya dari percakapan dan lesson yang sedang dibuka lalu jawab, atau tanya balik satu pertanyaan pendek. Jangan menolak.
+- Sapaan, terima kasih, atau basa-basi: balas singkat dan wajar, lalu ajak lanjut belajar. Tidak perlu materi untuk itu.
+- Variasikan kalimatmu. Jangan mengulang kalimat baku yang sama di tiap balasan.
+
+ISI JAWABAN
+1. Pijakan utama adalah MATERI PELAJARAN di bawah. Jangan mengarang isi materi, angka, nama, atau istilah yang tidak ada di sana, dan jangan mengaku materi berkata sesuatu yang tidak tertulis.
+2. Kamu boleh menambah penjelasan umum yang singkat (contoh, analogi, definisi sederhana) supaya konsepnya mudah dipahami, selama masih satu topik dengan lesson. Tandai dengan jelas, misalnya "Di luar materi, tapi biar gampang: ...".
+3. Kalau materi tidak memuat jawabannya, bilang santai apa yang ada dan tidak ada di materi, lalu arahkan ke bagian terdekat atau tawarkan bantuan lain.
+4. Kalau pertanyaannya jelas tidak berhubungan dengan belajar (politik, gosip, dan sebagainya), tolak dengan ramah dalam satu kalimat dan ajak balik ke lesson.
+5. ${
         effectiveAssessmentActive
-          ? 'PERINGATAN: Siswa sedang mengerjakan soal/asesmen aktif! JANGAN PERNAH berikan jawaban langsung/final. Gunakan metode Socratic: berikan hint, pertanyaan pengarah, atau tunjukkan rumus/konsep yang relevan agar siswa berpikir sendiri.'
-          : 'Jelaskan konsep dengan jelas, bertahap, dan mudah dimengerti.'
-      }
-4. Jawab dalam Bahasa Indonesia yang santun dan menyemangati.`;
+          ? 'PENTING: siswa sedang mengerjakan soal/asesmen aktif. JANGAN memberi jawaban langsung atau final. Bantu dengan petunjuk, pertanyaan pengarah, atau tunjukkan konsep/rumus yang relevan supaya ia menemukan jawabannya sendiri.'
+          : 'Jelaskan bertahap dan mudah dipahami.'
+      }`;
 
       const transcript = history
         .map((m) => `${m.sender === ChatSender.user ? 'SISWA' : 'COACH'}: ${m.content.slice(0, 600)}`)
         .join('\n');
 
-      const prompt = `MATERI PELAJARAN:
-${contextText}
+      const prompt = `${lessonLabel ? `LESSON YANG SEDANG DIBUKA: ${lessonLabel}\n\n` : ''}MATERI PELAJARAN:
+${contextText.trim() ? contextText : '(tidak ada bagian materi yang cocok dengan pesan ini)'}
 ${transcript ? `\nRIWAYAT PERCAKAPAN (untuk memahami konteks pertanyaan lanjutan):\n${transcript}\n` : ''}
-PERTANYAAN SISWA:
+PESAN SISWA:
 ${userMessage}`;
 
       // Gemini first; if it fails (quota, timeout, outage) DeepSeek answers instead. Both get
@@ -337,7 +362,7 @@ ${userMessage}`;
       // reads as an irrelevant reply, so say plainly that the coach is unavailable instead.
       if (!assistantReply) {
         assistantReply =
-          'Maaf, AI Study Coach sedang sulit dijangkau. Silakan coba kirim pertanyaanmu lagi sebentar lagi.';
+          'Maaf, aku lagi susah dihubungi nih. Coba kirim lagi pertanyaanmu sebentar lagi ya.';
       }
     }
 
@@ -345,7 +370,7 @@ ${userMessage}`;
     if (!assistantReply) {
       if (!contextText.trim()) {
         assistantReply =
-          'Maaf, materi terkait pertanyaan ini belum tercakup dalam modul pelajaran Anda. Silakan tanyakan materi lain yang ada di kurikulum.';
+          'Hmm, itu belum ada di materi yang kupunya. Coba tanyakan bagian lain dari lesson ini ya.';
       } else if (effectiveAssessmentActive) {
         assistantReply = `Sebagai petunjuk untuk soal ini: Perhatikan konsep pada materi berikut: "${retrievedChunks[0]?.chunkText.slice(0, 100)}...". Coba ingat kembali langkah awalnya, bagaimana hubungan antara variabel atau angka tersebut?`;
       } else {
@@ -416,7 +441,7 @@ ${userMessage}`;
 
     // Bounded wait: a hung call must not hold the learner's request open indefinitely.
     const res = await Promise.race([
-      this.ai.models.generateContent({ model: 'gemini-2.5-flash', contents }),
+      this.ai.models.generateContent({ model: 'gemini-2.5-flash', contents, config: { temperature: 0.7 } }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Gemini generation timed out after 45s')), 45000)
       ),
@@ -446,6 +471,7 @@ ${userMessage}`;
             { role: 'user', content: prompt },
           ],
           stream: false,
+          temperature: 0.7,
         }),
         signal: controller.signal,
       });
