@@ -6,6 +6,7 @@ import { Readable } from 'stream';
 import { GoogleGenAI } from '@google/genai';
 import { prisma } from '../lib/prisma.js';
 import { ragService } from './rag.service.js';
+import { masteryService } from './mastery.service.js';
 import { ChatScope, ChatSender } from '@prisma/client';
 
 /**
@@ -290,6 +291,10 @@ export class ChatService {
 
     let providerUsed: 'gemini' | 'deepseek' | null = null;
 
+    const learnerContext = this.hasAnyProvider()
+      ? await this.buildLearnerContext(tenantId, session.learnerId, session.objectiveIds)
+      : '';
+
     // Name of the lesson the session is scoped to, so "ini materi apa?" is answerable even when
     // no passage matched.
     let lessonLabel: string | undefined;
@@ -321,7 +326,8 @@ ISI JAWABAN
 2. Kamu boleh menambah penjelasan umum yang singkat (contoh, analogi, definisi sederhana) supaya konsepnya mudah dipahami, selama masih satu topik dengan lesson. WAJIB ditandai dengan awalan singkat seperti "Di luar materi:" atau "Sekadar contoh umum:", supaya siswa tahu mana yang dari materi dan mana tambahanmu.
 3. Kalau materi tidak memuat jawabannya, bilang santai apa yang ada dan tidak ada di materi, lalu arahkan ke bagian terdekat atau tawarkan bantuan lain.
 4. Kalau pertanyaannya jelas tidak berhubungan dengan belajar (politik, gosip, dan sebagainya), tolak dengan ramah dalam satu kalimat dan ajak balik ke lesson.
-5. ${
+5. Kamu punya DATA BELAJAR SISWA INI (progres lesson, skor quiz, saran berikutnya). Kalau ia bertanya soal progres, nilai, kelemahan, atau "harus belajar apa", jawab dari data itu dengan angka apa adanya. JANGAN pernah bilang kamu tidak bisa melihat progresnya. Jangan membacakan datanya kalau tidak ditanya; pakai secukupnya untuk menyesuaikan saran. Skor quiz baru ada untuk lesson yang punya quiz dan sudah dikerjakan; kalau datanya kosong, katakan belum ada datanya lalu ajak mulai. Jangan mengarang angka yang tidak ada di data.
+6. ${
         effectiveAssessmentActive
           ? 'PENTING: siswa sedang mengerjakan soal/asesmen aktif. JANGAN memberi jawaban langsung atau final. Bantu dengan petunjuk, pertanyaan pengarah, atau tunjukkan konsep/rumus yang relevan supaya ia menemukan jawabannya sendiri.'
           : 'Jelaskan bertahap dan mudah dipahami.'
@@ -331,7 +337,7 @@ ISI JAWABAN
         .map((m) => `${m.sender === ChatSender.user ? 'SISWA' : 'COACH'}: ${m.content.slice(0, 600)}`)
         .join('\n');
 
-      const prompt = `${lessonLabel ? `LESSON YANG SEDANG DIBUKA: ${lessonLabel}\n\n` : ''}MATERI PELAJARAN:
+      const prompt = `${lessonLabel ? `LESSON YANG SEDANG DIBUKA: ${lessonLabel}\n\n` : ''}${learnerContext ? `DATA BELAJAR SISWA INI (miliknya sendiri, dari sistem getlearn):\n${learnerContext}\n\n` : ''}MATERI PELAJARAN:
 ${contextText.trim() ? contextText : '(tidak ada bagian materi yang cocok dengan pesan ini)'}
 ${transcript ? `\nRIWAYAT PERCAKAPAN (untuk memahami konteks pertanyaan lanjutan):\n${transcript}\n` : ''}
 PESAN SISWA:
@@ -436,6 +442,73 @@ ${userMessage}`;
       provider: providerUsed,
       created_at: assistantMsg.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * A compact, plain-text picture of this learner's own progress, handed to the model so the coach
+   * can answer "progres aku gimana?" and tailor its help instead of claiming it cannot see it.
+   * Only the learner's own data, keyed by the anonymous learner id - no name or email exists here.
+   * Best effort: any failure just means the coach answers without it.
+   */
+  private async buildLearnerContext(
+    tenantId: string,
+    learnerId: string,
+    focusLessonIds: string[]
+  ): Promise<string> {
+    try {
+      const [enrollments, complete, partial, focusProgress, mastery, next] = await Promise.all([
+        prisma.enrollment.findMany({ where: { tenantId, learnerId }, orderBy: { progressPct: 'desc' }, take: 6 }),
+        prisma.lessonProgress.count({ where: { tenantId, learnerId, status: 'complete' } }),
+        prisma.lessonProgress.count({ where: { tenantId, learnerId, status: 'partial' } }),
+        focusLessonIds.length
+          ? prisma.lessonProgress.findFirst({ where: { tenantId, learnerId, lessonId: { in: focusLessonIds } } })
+          : Promise.resolve(null),
+        prisma.masteryRecord.findMany({
+          where: { tenantId, learnerId },
+          include: { objective: { select: { label: true } } },
+          orderBy: { score: 'asc' },
+          take: 40,
+        }),
+        masteryService.getNextAction(tenantId, learnerId).catch(() => null),
+      ]);
+
+      const pct = (n: number) => `${Math.round(n * 100)}%`;
+      const lines: string[] = [];
+
+      if (enrollments.length) {
+        lines.push(
+          'Course yang diikuti: ' +
+            enrollments.map((e) => `${e.courseLabel ?? e.courseId} (${Math.round(e.progressPct)}%)`).join('; ')
+        );
+      }
+      lines.push(`Lesson: ${complete} selesai, ${partial} sedang berjalan.`);
+
+      if (focusLessonIds.length) {
+        const status = focusProgress ? (focusProgress.status === 'complete' ? 'sudah selesai' : 'sedang berjalan') : 'belum dimulai';
+        const focusMastery = mastery.find((m) => focusLessonIds.includes(m.objectiveId));
+        lines.push(
+          `Lesson yang sedang dibuka: ${status}` +
+            (focusMastery ? `; skor quiz-nya ${pct(focusMastery.score)} (dari ${focusMastery.evidenceCount} soal)` : '; belum ada hasil quiz')
+        );
+      }
+
+      if (mastery.length) {
+        const avg = mastery.reduce((s, m) => s + m.score, 0) / mastery.length;
+        const weak = mastery.filter((m) => m.score < 0.7).slice(0, 5);
+        const strong = mastery.filter((m) => m.score >= 0.85).slice(-3).reverse();
+        lines.push(`Skor quiz rata-rata ${pct(avg)} dari ${mastery.length} lesson yang sudah ada quiz-nya.`);
+        if (weak.length) lines.push('Perlu diulang (di bawah 70%): ' + weak.map((m) => `${m.objective.label} (${pct(m.score)})`).join('; '));
+        if (strong.length) lines.push('Sudah kuat: ' + strong.map((m) => `${m.objective.label} (${pct(m.score)})`).join('; '));
+      } else {
+        lines.push('Belum ada hasil quiz yang tercatat.');
+      }
+
+      if (next?.explanation) lines.push(`Saran belajar berikutnya dari sistem: ${next.explanation}`);
+      return lines.join('\n');
+    } catch (err: any) {
+      console.warn('[chat] learner context unavailable:', err?.message || err);
+      return '';
+    }
   }
 
   private hasAnyProvider(): boolean {
