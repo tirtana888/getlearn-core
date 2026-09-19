@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
+import { isAnswerSeeking } from './chatGuard.js';
 
 /**
  * Chat records for analytics and product improvement. A "record" is one turn: the learner's
@@ -17,6 +18,8 @@ export interface RecordFilters {
   learnerRef?: string;
   lessonId?: string;
   outcome?: string;
+  /** Learner refs left out of the results (internal test accounts). */
+  excludeLearners?: string[];
   limit: number;
 }
 
@@ -38,12 +41,14 @@ export interface ChatRecord {
   top_similarity: number | null;
   source_lessons: string[];
   guardrail: string | null;
+  /** The learner asked for the answer to something they should work out (or pasted a worksheet item). */
+  answer_seeking: boolean;
   feedback: number | null;
 }
 
 const CSV_COLUMNS: Array<keyof ChatRecord> = [
   'answered_at', 'asked_at', 'session_id', 'learner_id', 'lesson_id', 'lesson', 'question', 'answer', 'outcome',
-  'provider', 'latency_ms', 'tokens_used', 'retrieval_count', 'top_similarity', 'source_lessons', 'guardrail', 'feedback',
+  'provider', 'latency_ms', 'tokens_used', 'retrieval_count', 'top_similarity', 'source_lessons', 'guardrail', 'answer_seeking', 'feedback',
 ];
 
 /** RFC 4180 CSV. Cells starting with = + - @ are prefixed so a spreadsheet never runs them as formulas. */
@@ -73,7 +78,11 @@ export class ChatRecordsService {
         ...(f.lessonId ? { OR: [{ lessonId: f.lessonId }, { lessonId: null, session: { objectiveIds: { has: f.lessonId } } }] } : {}),
         session: {
           tenantId,
-          ...(f.learnerRef ? { learner: { externalRef: f.learnerRef } } : {}),
+          ...(f.learnerRef
+            ? { learner: { externalRef: f.learnerRef } }
+            : f.excludeLearners?.length
+              ? { learner: { externalRef: { notIn: f.excludeLearners } } }
+              : {}),
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -127,6 +136,7 @@ export class ChatRecordsService {
         top_similarity: a.topSimilarity,
         source_lessons: a.sourceContentIds.map((id) => labels.get(id) ?? id),
         guardrail: a.guardrail,
+        answer_seeking: isAnswerSeeking(question.content) || a.guardrail === 'answer_seeking' || a.guardrail === 'exam_shaped',
         feedback: a.feedback,
       });
     }
@@ -134,8 +144,12 @@ export class ChatRecordsService {
   }
 
   /** Aggregates for the last `days` days. Questions = learner messages; outcomes come from the answers. */
-  async summary(tenantId: string, days: number) {
+  async summary(tenantId: string, days: number, excludeLearners: string[] = []) {
     const since = new Date(Date.now() - days * 24 * 3_600_000);
+    // Internal test accounts would otherwise dominate the numbers while real usage is still small.
+    const notTest = excludeLearners.length
+      ? Prisma.sql`AND s.learner_id NOT IN (SELECT id FROM learners WHERE tenant_id = ${tenantId} AND external_ref = ANY(${excludeLearners}::text[]))`
+      : Prisma.empty;
     type Row = Record<string, any>;
     const q = <T = Row[]>(sql: Prisma.Sql) => prisma.$queryRaw<T>(sql);
 
@@ -146,17 +160,17 @@ export class ChatRecordsService {
                COUNT(*) FILTER (WHERE m.sender = 'user')::int AS questions,
                COUNT(*) FILTER (WHERE m.sender = 'assistant' AND m.outcome IS NOT NULL)::int AS answers_tracked
         FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
-        WHERE s.tenant_id = ${tenantId} AND m.created_at >= ${since}`),
+        WHERE s.tenant_id = ${tenantId} ${notTest} AND m.created_at >= ${since}`),
       q(Prisma.sql`
         SELECT to_char((m.created_at AT TIME ZONE 'Asia/Jakarta')::date, 'YYYY-MM-DD') AS day,
                COUNT(*)::int AS questions
         FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
-        WHERE s.tenant_id = ${tenantId} AND m.sender = 'user' AND m.created_at >= ${since}
+        WHERE s.tenant_id = ${tenantId} ${notTest} AND m.sender = 'user' AND m.created_at >= ${since}
         GROUP BY 1 ORDER BY 1`),
       q(Prisma.sql`
         SELECT COALESCE(m.outcome, 'unknown') AS outcome, COUNT(*)::int AS n
         FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
-        WHERE s.tenant_id = ${tenantId} AND m.sender = 'assistant' AND m.created_at >= ${since}
+        WHERE s.tenant_id = ${tenantId} ${notTest} AND m.sender = 'assistant' AND m.created_at >= ${since}
           AND EXISTS (SELECT 1 FROM chat_messages u WHERE u.session_id = m.session_id AND u.sender = 'user' AND u.created_at <= m.created_at)
         GROUP BY 1 ORDER BY 2 DESC`),
       q(Prisma.sql`
@@ -164,17 +178,17 @@ export class ChatRecordsService {
                ROUND(AVG(m.latency_ms))::int AS avg_latency_ms,
                COALESCE(SUM(m.tokens_used), 0)::int AS tokens
         FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
-        WHERE s.tenant_id = ${tenantId} AND m.sender = 'assistant' AND m.provider IS NOT NULL AND m.created_at >= ${since}
+        WHERE s.tenant_id = ${tenantId} ${notTest} AND m.sender = 'assistant' AND m.provider IS NOT NULL AND m.created_at >= ${since}
         GROUP BY 1 ORDER BY 2 DESC`),
       q(Prisma.sql`
         SELECT COUNT(*) FILTER (WHERE m.feedback = 1)::int AS up, COUNT(*) FILTER (WHERE m.feedback = -1)::int AS down
         FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
-        WHERE s.tenant_id = ${tenantId} AND m.sender = 'assistant' AND m.created_at >= ${since}`),
+        WHERE s.tenant_id = ${tenantId} ${notTest} AND m.sender = 'assistant' AND m.created_at >= ${since}`),
       q(Prisma.sql`
         SELECT COALESCE(m.lesson_id, s.objective_ids[1]) AS lesson_id, COUNT(DISTINCT s.id)::int AS sessions,
                COUNT(*) FILTER (WHERE m.sender = 'user')::int AS questions
         FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
-        WHERE s.tenant_id = ${tenantId} AND m.created_at >= ${since} AND COALESCE(m.lesson_id, s.objective_ids[1]) IS NOT NULL
+        WHERE s.tenant_id = ${tenantId} ${notTest} AND m.created_at >= ${since} AND COALESCE(m.lesson_id, s.objective_ids[1]) IS NOT NULL
         GROUP BY 1 ORDER BY 3 DESC LIMIT 10`),
     ]);
 
@@ -186,7 +200,21 @@ export class ChatRecordsService {
     );
 
     // Questions the material could not answer: the clearest signal of what content is missing.
-    const gaps = await this.listRecords(tenantId, { from: since, outcome: 'no_material', limit: 25 });
+    const gaps = await this.listRecords(tenantId, { from: since, outcome: 'no_material', excludeLearners, limit: 25 });
+
+    // Who is asking for answers, and on which lessons: a signal of both integrity and difficulty.
+    const asked = await q<Array<{ content: string; lesson_id: string | null }>>(Prisma.sql`
+      SELECT m.content, COALESCE(m.lesson_id, s.objective_ids[1]) AS lesson_id
+      FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
+      WHERE s.tenant_id = ${tenantId} ${notTest} AND m.sender = 'user' AND m.created_at >= ${since}
+      LIMIT 20000`);
+    const seeking = asked.filter((r) => isAnswerSeeking(r.content));
+    const seekingByLesson = new Map<string, number>();
+    for (const r of seeking) if (r.lesson_id) seekingByLesson.set(r.lesson_id, (seekingByLesson.get(r.lesson_id) ?? 0) + 1);
+    const seekingTop = [...seekingByLesson.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const seekingLabels = new Map(
+      (await prisma.learningObjective.findMany({ where: { tenantId, id: { in: seekingTop.map(([id]) => id) } }, select: { id: true, label: true } })).map((o) => [o.id, o.label])
+    );
 
     const t = totals[0] ?? { sessions: 0, learners: 0, questions: 0, answers_tracked: 0 };
     // Rates cover only answers recorded with an outcome; older rows have none and would skew them.
@@ -207,6 +235,11 @@ export class ChatRecordsService {
       tokens_total: providers.reduce((s: number, p: Row) => s + p.tokens, 0),
       feedback: feedback[0] ?? { up: 0, down: 0 },
       top_lessons: lessons.map((l: Row) => ({ lesson_id: l.lesson_id, lesson: lessonLabels.get(l.lesson_id) ?? l.lesson_id, sessions: l.sessions, questions: l.questions })),
+      answer_seeking: {
+        count: seeking.length,
+        rate: asked.length ? Math.round((seeking.length / asked.length) * 100) : null,
+        top_lessons: seekingTop.map(([id, count]) => ({ lesson_id: id, lesson: seekingLabels.get(id) ?? id, count })),
+      },
       unanswered_questions: gaps.map((g) => ({ asked_at: g.asked_at, lesson: g.lesson, question: g.question })),
       note: 'Outcome-based figures cover only answers recorded after chat analytics was enabled.',
     };
@@ -222,3 +255,15 @@ export class ChatRecordsService {
 }
 
 export const chatRecordsService = new ChatRecordsService();
+
+/**
+ * Learner refs to leave out of analytics by default: internal test accounts, listed in the
+ * ANALYTICS_TEST_LEARNERS environment variable (comma-separated). Override per request with
+ * include_test=true.
+ */
+export function testLearnerRefs(): string[] {
+  return (process.env.ANALYTICS_TEST_LEARNERS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}

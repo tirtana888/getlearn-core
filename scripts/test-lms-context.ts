@@ -78,6 +78,31 @@ const crowded = renderLmsContext(manyCourses);
 check('12 courses of drip do not crowd out assignments and quiz scores', crowded.includes('Tugas (assignment):') && crowded.includes('Skor quiz (') && crowded.includes('Ujian Unit 1'));
 check('crowded output still within the cap', crowded.length <= 4000, String(crowded.length));
 
+// --- the open course wins ambiguous references ("unit 2 kapan dibuka" while in MKK-11) ---
+const focused = renderLmsContext({ ...input, focusCourseId: 'c2' });
+check('focus: header names the open course and the default rule', focused.includes('Course yang sedang dibuka siswa: MKK-11 Digital') && focused.includes('yang dimaksud course ini'));
+check('focus: the open course schedule line is marked', renderLmsContext({ ...input, focusCourseId: 'c1' }).includes('- MKI-04 English Profesional (course yang sedang dibuka): bab belum dibuka'));
+const unfocused = renderLmsContext(input);
+check('no focus: no header and nothing marked', !unfocused.includes('Course yang sedang dibuka siswa') && !unfocused.includes('(course yang sedang dibuka)'));
+const focusedC1 = renderLmsContext({ ...input, focusCourseId: 'c1' });
+check('focus c1: c1 schedule listed before c2', focusedC1.indexOf('MKI-04 English Profesional (course yang sedang dibuka)') < focusedC1.indexOf('- MKK-11 Digital') || !focusedC1.includes('- MKK-11 Digital'));
+check('focus: unsubmitted assignments of the open course precede other courses', (() => {
+  const two = renderLmsContext({
+    ...input,
+    focusCourseId: 'c2',
+    assignments: [
+      ...input.assignments.slice(0, 2),
+      { ...input.assignments[2], assignmentId: 'a4', title: 'Tugas Baru MKK-11', courseId: 'c2' },
+    ],
+    submissions: [],
+  });
+  return two.indexOf('Tugas Baru MKK-11') < two.indexOf('Assignment Unit 1');
+})());
+check('focus: the open course quiz is listed first', (() => {
+  const q = renderLmsContext({ ...input, focusCourseId: 'c1' });
+  return q.indexOf('Ujian Unit 1') < q.indexOf('Kuis PMS');
+})());
+
 check('no enrollments/assignments/attempts -> empty string', renderLmsContext({ ...input, enrollments: [], assignments: [], quizAttempts: [] }) === '');
 check('output is capped', renderLmsContext({ ...input, assignments: Array.from({ length: 60 }, (_, i) => ({ ...input.assignments[0], assignmentId: `x${i}`, title: 'T'.repeat(200) })) }).length <= 4000);
 

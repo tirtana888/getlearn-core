@@ -12,7 +12,7 @@ const base: ChatRecord = {
   asked_at: '2026-09-19T05:00:00.000Z', answered_at: '2026-09-19T05:00:03.000Z',
   question: 'Apa itu ekosistem?', answer: 'Jaringan yang saling bergantung.', outcome: 'answered', provider: 'deepseek',
   latency_ms: 3120, tokens_used: 950, retrieval_count: 4, top_similarity: 0.823, source_lessons: ['Ekosistem Pariwisata'],
-  guardrail: null, feedback: null,
+  guardrail: null, answer_seeking: false, feedback: null,
 };
 
 const csv = toCsv([
@@ -23,7 +23,7 @@ const csv = toCsv([
 ]);
 const lines = csv.split('\r\n');
 
-check('header is the documented column order', lines[0] === 'answered_at,asked_at,session_id,learner_id,lesson_id,lesson,question,answer,outcome,provider,latency_ms,tokens_used,retrieval_count,top_similarity,source_lessons,guardrail,feedback');
+check('header is the documented column order', lines[0] === 'answered_at,asked_at,session_id,learner_id,lesson_id,lesson,question,answer,outcome,provider,latency_ms,tokens_used,retrieval_count,top_similarity,source_lessons,guardrail,answer_seeking,feedback');
 check('plain row has no needless quoting', lines[1].startsWith('2026-09-19T05:00:03.000Z,2026-09-19T05:00:00.000Z,s1,frappe_abc,L1,Ekosistem Pariwisata,Apa itu ekosistem?,'));
 check('commas, quotes and newlines are quoted and escaped', csv.includes('"Halo, ""apa kabar""?\nBaris kedua"'));
 check('null becomes an empty cell', /,,/.test(lines[2]) || lines[2].includes(',,'));
@@ -33,6 +33,7 @@ check('a leading + is neutralised', csv.includes("'+cmd|calc"));
 check('a leading @ is neutralised', csv.includes("'@SUM(A1)"));
 check('a leading - is neutralised', csv.includes("'-1+1"));
 check('numbers and negative feedback are kept', csv.includes(',3120,950,4,0.823,') && csv.includes(',-1'));
+check('answer_seeking is exported as true/false', csv.includes(',false,') );
 check('ends with a line break and has one row per record + header', csv.endsWith('\r\n') && csv.split('\r\n').filter((l) => l.length).length >= 5);
 check('no records -> header only', toCsv([]).trim().split('\r\n').length === 1);
 

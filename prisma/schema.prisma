@@ -84,6 +84,7 @@ model LearningObjective {
   courseId      String?  @map("course_id")
   courseLabel   String?  @map("course_label")
   sequence      Int? // order of this lesson within its course
+  assignmentRef String?  @map("assignment_ref") // LMS assignment attached to this lesson, if any
   chapterId     String?  @map("chapter_id") // LMS chapter this lesson belongs to
   assessmentRef String?  @map("assessment_ref") // id of the quiz attached to this lesson, if any
   createdAt     DateTime @default(now()) @map("created_at")
@@ -342,6 +343,7 @@ model Assignment {
   assignmentId     String    @map("assignment_id") // the LMS's own assignment id
   courseId         String?   @map("course_id")
   title            String
+  question         String?   @db.Text // the assignment's instructions (plain text)
   enableScheduling Boolean   @default(false) @map("enable_scheduling")
   scheduleStart    DateTime? @map("schedule_start")
   scheduleEnd      DateTime? @map("schedule_end")

@@ -31,6 +31,8 @@ function within(lines: string[], budget: number): string[] {
 export interface LmsContextInput {
   /** Today as YYYY-MM-DD in the school's timezone. */
   today: string;
+  /** The course of the lesson the learner has open; ambiguous questions default to it. */
+  focusCourseId?: string | null;
   courseLabels: Record<string, string>;
   enrollments: Array<{ courseId: string; enrolledAt: Date | null; batchStartDate: Date | null }>;
   chapters: Array<{
@@ -95,6 +97,7 @@ export function releaseDate(
 
 export function renderLmsContext(input: LmsContextInput): string {
   const { today } = input;
+  const focus = input.focusCourseId ?? null;
   const label = (courseId: string | null) => (courseId ? input.courseLabels[courseId] ?? courseId : '');
   const anchors = new Map(input.enrollments.map((e) => [e.courseId, e]));
   const schedule: string[] = [];
@@ -102,7 +105,10 @@ export function renderLmsContext(input: LmsContextInput): string {
   const scores: string[] = [];
 
   // ---- course schedule: chapters that are still locked, passed and upcoming chapter deadlines
-  for (const enrollment of input.enrollments) {
+  const orderedEnrollments = [...input.enrollments].sort(
+    (a, b) => Number(b.courseId === focus) - Number(a.courseId === focus)
+  );
+  for (const enrollment of orderedEnrollments) {
     const chapters = input.chapters.filter((c) => c.courseId === enrollment.courseId);
     const locked: Array<[string, string]> = [];
     const closed: Array<[string, string]> = [];
@@ -132,14 +138,16 @@ export function renderLmsContext(input: LmsContextInput): string {
       notes.push('deadline bab berikutnya: ' + upcoming.slice(0, 2).map(([d, t]) => `${t} (${d})`).join('; '));
     }
     if (notes.length) {
-      schedule.push(`- ${label(enrollment.courseId)}: ${notes.join(' | ')}`);
+      schedule.push(
+        `- ${label(enrollment.courseId)}${enrollment.courseId === focus ? ' (course yang sedang dibuka)' : ''}: ${notes.join(' | ')}`
+      );
     }
   }
 
   // ---- assignments and their status
   if (input.assignments.length) {
     const status = new Map(input.submissions.map((s) => [s.assignmentId, s.status]));
-    const rows: Array<{ rank: [number, number, string]; text: string }> = [];
+    const rows: Array<{ rank: [number, number, number, string]; text: string }> = [];
 
     for (const a of input.assignments) {
       const enrollment = a.courseId ? anchors.get(a.courseId) : undefined;
@@ -169,12 +177,15 @@ export function renderLmsContext(input: LmsContextInput): string {
       if (due) parts.push(`${overdue ? 'deadline lewat' : 'deadline'} ${due}`);
 
       rows.push({
-        rank: [submitted ? 1 : 0, overdue ? 0 : 1, due ?? '9999'],
+        rank: [submitted ? 1 : 0, a.courseId === focus ? 0 : 1, overdue ? 0 : 1, due ?? '9999'],
         text: `- ${a.title}${a.courseId ? ` [${label(a.courseId)}]` : ''}: ${parts.join(', ')}`,
       });
     }
 
-    rows.sort((x, y) => x.rank[0] - y.rank[0] || x.rank[1] - y.rank[1] || x.rank[2].localeCompare(y.rank[2]));
+    rows.sort(
+      (x, y) =>
+        x.rank[0] - y.rank[0] || x.rank[1] - y.rank[1] || x.rank[2] - y.rank[2] || x.rank[3].localeCompare(y.rank[3])
+    );
     const done = input.assignments.filter((a) => status.get(a.assignmentId)).length;
     tasks.push(`Tugas (assignment): ${done} dari ${input.assignments.length} sudah dikumpulkan.`);
     tasks.push(...rows.slice(0, 10).map((r) => r.text));
@@ -200,6 +211,7 @@ export function renderLmsContext(input: LmsContextInput): string {
         const detail = latest.score != null && latest.scoreOutOf ? ` (${latest.score}/${latest.scoreOutOf})` : '';
         return {
           at: latest.submittedAt.getTime(),
+          inFocus: latest.courseId === focus,
           best,
           text:
             `- ${latest.quizTitle}${latest.courseId ? ` [${label(latest.courseId)}]` : ''}: ` +
@@ -213,7 +225,7 @@ export function renderLmsContext(input: LmsContextInput): string {
               .join(', '),
         };
       })
-      .sort((a, b) => b.at - a.at);
+      .sort((a, b) => Number(b.inFocus) - Number(a.inFocus) || b.at - a.at);
 
     const bests = summaries.map((s) => s.best).filter((v): v is number => v != null);
     scores.push(
@@ -226,6 +238,11 @@ export function renderLmsContext(input: LmsContextInput): string {
   // Most decision-relevant first: what is owed, what was scored, then what opens/closes when.
   return [
     `Tanggal hari ini: ${today}`,
+    ...(focus
+      ? [
+          `Course yang sedang dibuka siswa: ${label(focus)}. Kalau siswa menyebut "unit 2", "bab berikutnya", atau "tugas" tanpa menyebut course, yang dimaksud course ini.`,
+        ]
+      : []),
     ...within(tasks, BUDGET.tasks),
     ...within(scores, BUDGET.scores),
     ...within(schedule, BUDGET.schedule),
@@ -235,7 +252,11 @@ export function renderLmsContext(input: LmsContextInput): string {
 }
 
 /** Loads one learner's data and renders it. Best effort: never throws into the chat. */
-export async function buildLmsContext(tenantId: string, learnerId: string): Promise<string> {
+export async function buildLmsContext(
+  tenantId: string,
+  learnerId: string,
+  focusCourseId?: string | null
+): Promise<string> {
   try {
     const enrollments = await prisma.enrollment.findMany({
       where: { tenantId, learnerId },
@@ -254,6 +275,7 @@ export async function buildLmsContext(tenantId: string, learnerId: string): Prom
 
     return renderLmsContext({
       today: todayInSchoolTz(),
+      focusCourseId,
       courseLabels: Object.fromEntries(enrollments.map((e) => [e.courseId, e.courseLabel ?? e.courseId])),
       enrollments,
       chapters,

@@ -19,6 +19,7 @@ export interface CatalogResult {
 interface LessonBlocks {
   scormFileIds: string[];
   quizNames: string[];
+  assignmentIds: string[];
   text: string;
 }
 
@@ -63,7 +64,7 @@ export class FrappeCatalogService {
 
   /** Pulls the block structure of a lesson's `content` (EditorJS JSON) into what we can use. */
   parseLessonContent(raw: string | null | undefined): LessonBlocks {
-    const out: LessonBlocks = { scormFileIds: [], quizNames: [], text: '' };
+    const out: LessonBlocks = { scormFileIds: [], quizNames: [], assignmentIds: [], text: '' };
     if (!raw || !raw.trim()) return out;
 
     let blocks: any[] = [];
@@ -78,6 +79,7 @@ export class FrappeCatalogService {
       const d = b?.data || {};
       if (b.type === 'scorm' && d.scorm_package) out.scormFileIds.push(String(d.scorm_package));
       else if (b.type === 'quiz' && d.quiz) out.quizNames.push(String(d.quiz));
+      else if (b.type === 'assignment' && d.assignment) out.assignmentIds.push(String(d.assignment));
       else if (b.type === 'markdown' || b.type === 'paragraph' || b.type === 'header') {
         if (d.text) parts.push(String(d.text));
       } else if (b.type === 'list' && Array.isArray(d.items)) {
@@ -150,6 +152,7 @@ export class FrappeCatalogService {
           courseLabel: courseId ? courseTitle.get(courseId) ?? courseId : null,
           sequence: placement?.seq ?? null,
           chapterId: placement?.chapterId ?? null,
+          assignmentRef: blocks.assignmentIds[0] ?? null,
           assessmentRef: quizRef,
         },
         create: {
@@ -160,6 +163,7 @@ export class FrappeCatalogService {
           courseLabel: courseId ? courseTitle.get(courseId) ?? courseId : null,
           sequence: placement?.seq ?? null,
           chapterId: placement?.chapterId ?? null,
+          assignmentRef: blocks.assignmentIds[0] ?? null,
           assessmentRef: quizRef,
         },
       });
@@ -203,6 +207,25 @@ export class FrappeCatalogService {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
+  /** The LMS stores assignment instructions as HTML; the coach needs plain text (capped). */
+  private htmlToText(html: unknown): string | null {
+    if (!html) return null;
+    const text = String(html)
+      .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<\/(p|div|h[1-6]|li|tr|br)>|<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s*\n+/g, '\n')
+      .trim();
+    return text ? text.slice(0, 3000) : null;
+  }
+
   private async upsertChapter(tenantId: string, courseId: string, sequence: number, doc: any) {
     const data = {
       courseId,
@@ -223,13 +246,14 @@ export class FrappeCatalogService {
   /** Assignments and their own schedule; small (tens), so a full read every catalog refresh. */
   private async syncAssignments(tenantId: string, auth: FrappeAuth) {
     const rows = await this.getList(auth, 'LMS Assignment', [
-      'name', 'title', 'course', 'enable_scheduling', 'schedule_start', 'schedule_end',
+      'name', 'title', 'course', 'question', 'enable_scheduling', 'schedule_start', 'schedule_end',
       'deadline_type', 'deadline_days', 'drip_type', 'drip_date', 'drip_days',
     ]);
     for (const a of rows) {
       const data = {
         courseId: a.course || null,
         title: a.title || a.name,
+        question: this.htmlToText(a.question),
         enableScheduling: Boolean(Number(a.enable_scheduling)),
         scheduleStart: this.toDateTime(a.schedule_start),
         scheduleEnd: this.toDateTime(a.schedule_end),

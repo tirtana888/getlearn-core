@@ -730,6 +730,9 @@
               <option value="vague_fallback">Pesan samar</option>
               <option value="provider_failed">AI gagal menjawab</option>
             </select>
+            <label style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--text-secondary); cursor: pointer;">
+              <input type="checkbox" id="chatHideTest" checked onchange="loadChatAnalytics()"> Sembunyikan akun uji
+            </label>
             <button class="btn btn-secondary" onclick="downloadChatRecords('csv')">Unduh CSV</button>
             <button class="btn btn-secondary" onclick="downloadChatRecords('jsonl')">Unduh JSONL</button>
           </div>
@@ -742,6 +745,7 @@
         <div class="stat-card"><div class="stat-label">Terjawab dari Materi</div><div class="stat-value" id="chatStatAnswered">-</div><div class="stat-subtext">Ada bagian materi yang cocok</div></div>
         <div class="stat-card"><div class="stat-label">Materi Tidak Ditemukan</div><div class="stat-value" id="chatStatNoMaterial" style="color: #FBBF24;">-</div><div class="stat-subtext">Indikasi konten yang kurang</div></div>
         <div class="stat-card"><div class="stat-label">AI Gagal Menjawab</div><div class="stat-value" id="chatStatFailed" style="color: #F87171;">-</div><div class="stat-subtext" id="chatStatProviders">-</div></div>
+        <div class="stat-card"><div class="stat-label">Minta Jawaban</div><div class="stat-value" id="chatStatSeeking" style="color: #FBBF24;">-</div><div class="stat-subtext">Meminta jawaban soal atau menempel soal</div></div>
         <div class="stat-card"><div class="stat-label">Umpan Balik</div><div class="stat-value" id="chatStatFeedback">-</div><div class="stat-subtext" id="chatStatTokens">-</div></div>
       </div>
 
@@ -761,6 +765,16 @@
           <table class="data-table">
             <thead><tr><th>Lesson</th><th>Sesi</th><th>Pertanyaan</th></tr></thead>
             <tbody id="chatLessonsBody"><tr><td colspan="3" style="text-align: center;">Memuat...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom: 1.25rem;">
+        <div class="panel-header"><div class="panel-title">Lesson dengan permintaan jawaban terbanyak</div><span class="badge badge-warning">Tanda kesulitan atau soal yang terlalu sulit</span></div>
+        <div class="panel-body">
+          <table class="data-table">
+            <thead><tr><th>Lesson</th><th>Permintaan jawaban</th></tr></thead>
+            <tbody id="chatSeekingBody"><tr><td colspan="2" style="text-align: center;">Memuat...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1424,6 +1438,7 @@
       const q = new URLSearchParams({ from: new Date(Date.now() - days * 86400000).toISOString(), ...extra });
       const outcome = document.getElementById('chatOutcome').value;
       if (outcome) q.set('outcome', outcome);
+      if (!document.getElementById('chatHideTest').checked) q.set('include_test', 'true');
       return q.toString();
     }
 
@@ -1438,7 +1453,7 @@
       const days = Number(document.getElementById('chatDays').value) || 30;
       try {
         const [sumRes, recRes] = await Promise.all([
-          fetch(`/v1/analytics/chat?days=${days}`, { headers }),
+          fetch(`/v1/analytics/chat?days=${days}${document.getElementById('chatHideTest').checked ? '' : '&include_test=true'}`, { headers }),
           fetch(`/v1/chat/records?${chatQuery({ limit: '50' })}`, { headers }),
         ]);
         const summary = await sumRes.json();
@@ -1457,6 +1472,11 @@
         setText('chatStatProviders', summary.providers.length
           ? summary.providers.map((p) => `${p.provider} ${p.n}x, ${p.avg_latency_ms} ms`).join(' · ')
           : 'Belum ada data model');
+        const seek = summary.answer_seeking || { count: 0, rate: null, top_lessons: [] };
+        setText('chatStatSeeking', seek.rate == null ? seek.count : `${seek.count} (${seek.rate}%)`);
+        setRows(document.getElementById('chatSeekingBody'), seek.top_lessons.length
+          ? seek.top_lessons.map((l) => `<tr><td>${esc(l.lesson)}</td><td>${l.count}</td></tr>`).join('')
+          : '<tr><td colspan="2" style="text-align: center;">Belum ada permintaan jawaban.</td></tr>');
         setText('chatStatFeedback', `${summary.feedback.up} 👍 / ${summary.feedback.down} 👎`);
         setText('chatStatTokens', `${Number(summary.tokens_total).toLocaleString()} token terpakai`);
 
@@ -1474,7 +1494,7 @@
               <td style="white-space: nowrap;">${esc(shortTime(r.answered_at))}</td>
               <td><code style="font-family: monospace;">${esc(r.learner_id.slice(-6))}</code></td>
               <td>${esc(r.lesson || '-')}</td>
-              <td title="${esc(r.question)}">${esc(r.question.slice(0, 90))}${r.question.length > 90 ? '…' : ''}</td>
+              <td title="${esc(r.question)}">${esc(r.question.slice(0, 90))}${r.question.length > 90 ? '…' : ''}${r.answer_seeking ? ' <span class="badge badge-warning">minta jawaban</span>' : ''}</td>
               <td title="${esc(r.answer)}">${esc(r.answer.slice(0, 120))}${r.answer.length > 120 ? '…' : ''}</td>
               <td>${chatOutcomeBadge(r.outcome)}</td>
               <td>${esc(r.provider || '-')}${r.latency_ms != null ? `<div style="color: var(--text-muted); font-size: 0.7rem;">${r.latency_ms} ms</div>` : ''}</td>

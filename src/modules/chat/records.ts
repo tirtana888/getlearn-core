@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authMiddleware } from '../../middlewares/auth.middleware.js';
-import { chatRecordsService, toCsv } from '../../services/chatRecords.service.js';
+import { chatRecordsService, toCsv, testLearnerRefs } from '../../services/chatRecords.service.js';
 
 const OUTCOMES = ['answered', 'no_material', 'vague_fallback', 'provider_failed', 'dev_fallback', 'unknown'] as const;
 
@@ -13,11 +13,16 @@ const RecordsQuery = z.object({
   lesson_id: z.string().min(1).optional(),
   outcome: z.enum(OUTCOMES).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),
+  // Internal test accounts (ANALYTICS_TEST_LEARNERS) are hidden unless this is 'true'.
+  include_test: z.enum(['true', 'false']).optional(),
 });
 
 const ExportQuery = RecordsQuery.extend({ limit: z.coerce.number().int().min(1).max(5000).default(1000) });
 
-const SummaryQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
+const SummaryQuery = z.object({
+  days: z.coerce.number().int().min(1).max(365).default(30),
+  include_test: z.enum(['true', 'false']).optional(),
+});
 
 const FeedbackBody = z.object({ value: z.union([z.literal(1), z.literal(-1), z.literal(0)]) });
 
@@ -37,6 +42,7 @@ export async function chatRecordsRoutes(app: FastifyInstance) {
     learnerRef: q.learner_id,
     lessonId: q.lesson_id,
     outcome: q.outcome,
+    excludeLearners: q.include_test === 'true' ? [] : testLearnerRefs(),
     limit: q.limit,
   });
 
@@ -75,7 +81,8 @@ export async function chatRecordsRoutes(app: FastifyInstance) {
   app.get('/v1/analytics/chat', async (req, reply) => {
     const parsed = SummaryQuery.safeParse(req.query);
     if (!parsed.success) return invalid(reply, parsed.error);
-    return reply.status(200).send(await chatRecordsService.summary(req.tenantId, parsed.data.days));
+    const exclude = parsed.data.include_test === 'true' ? [] : testLearnerRefs();
+    return reply.status(200).send(await chatRecordsService.summary(req.tenantId, parsed.data.days, exclude));
   });
 
   // POST /v1/chat/messages/:id/feedback {value: 1 | -1 | 0} - a learner's thumbs on an answer.
