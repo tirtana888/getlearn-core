@@ -101,6 +101,19 @@ export class FrappeSyncService {
       await this.recordError(tenantId, `catalog pull failed: ${err.message || err}`);
     }
 
+    // Drip / deadline rules and assignments every cycle (cheap), so an instructor's edit reaches the
+    // coach within minutes instead of waiting for the hourly catalog pass.
+    try {
+      await frappeCatalogService.syncSchedule(tenantId, {
+        baseUrl: connection.baseUrl,
+        apiKey: connection.apiKey,
+        apiSecret: connection.apiSecret,
+      });
+    } catch (err: any) {
+      result.errors++;
+      await this.recordError(tenantId, `schedule pull failed: ${err.message || err}`);
+    }
+
     // Register every enrolled student up front, not just whoever happens to have a quiz
     // submission - otherwise a student who's only watched lessons/SCORM never shows up
     // in getlearn at all. Small school (tens of users) for now, so a full pull every

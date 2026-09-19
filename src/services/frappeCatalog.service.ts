@@ -271,6 +271,51 @@ export class FrappeCatalogService {
     }
   }
 
+  /**
+   * Chapter drip/deadline rules and assignments, refreshed on every sync cycle. Instructors edit
+   * these and expect the coach to follow within minutes, not at the next hourly catalog pass, and
+   * it costs two light list requests (no per-chapter documents). Existing chapter order
+   * (`sequence`) is left alone; the full catalog pass still owns that.
+   */
+  async syncSchedule(tenantId: string, auth: FrappeAuth): Promise<{ chapters: number; changed: number }> {
+    const rows = await this.getList(auth, 'Course Chapter', [
+      'name', 'title', 'course', 'drip_type', 'drip_date', 'drip_days', 'deadline_days',
+    ]);
+    let changed = 0;
+    for (const c of rows) {
+      if (!c.course) continue;
+      const data = {
+        courseId: c.course as string,
+        title: c.title || c.name,
+        dripType: c.drip_type || null,
+        dripDate: this.toDate(c.drip_date),
+        dripDays: c.drip_days != null ? Number(c.drip_days) : null,
+        deadlineDays: c.deadline_days != null ? Number(c.deadline_days) : null,
+      };
+      const where = { tenantId_chapterId: { tenantId, chapterId: c.name as string } };
+      const existing = await prisma.courseChapter.findUnique({ where });
+      if (
+        existing &&
+        existing.courseId === data.courseId &&
+        existing.title === data.title &&
+        (existing.dripType ?? null) === data.dripType &&
+        (existing.dripDate?.getTime() ?? null) === (data.dripDate?.getTime() ?? null) &&
+        (existing.dripDays ?? null) === data.dripDays &&
+        (existing.deadlineDays ?? null) === data.deadlineDays
+      ) {
+        continue;
+      }
+      await prisma.courseChapter.upsert({
+        where,
+        update: data,
+        create: { tenantId, chapterId: c.name as string, sequence: null, ...data },
+      });
+      changed++;
+    }
+    await this.syncAssignments(tenantId, auth);
+    return { chapters: rows.length, changed };
+  }
+
   /** Only lessons whose content version changed are re-extracted; the rest are left alone. */
   private async queueContentIndexing(
     tenantId: string,
