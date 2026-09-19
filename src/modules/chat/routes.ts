@@ -13,6 +13,9 @@ const CreateSessionSchema = z.object({
 const SendMessageSchema = z.object({
   message: z.string().min(1),
   is_assessment_active: z.boolean().default(false),
+  // Facts the LMS connector knows about this learner right now that getlearn does not store
+  // (drip schedule, deadlines, assignments...). Plain text, capped; used as background data only.
+  client_context: z.string().max(4000).optional(),
 });
 
 export async function chatRoutes(app: FastifyInstance) {
@@ -67,7 +70,7 @@ export async function chatRoutes(app: FastifyInstance) {
       });
     }
 
-    const { message, is_assessment_active } = parseResult.data;
+    const { message, is_assessment_active, client_context } = parseResult.data;
 
     // Pre-flight check: reject immediately with HTTP 402 if tenant balance is depleted
     if (req.tenant.tokenBalance <= 0) {
@@ -90,7 +93,8 @@ export async function chatRoutes(app: FastifyInstance) {
         message,
         is_assessment_active,
         voiceRequested,
-        baseUrl
+        baseUrl,
+        client_context
       );
       return reply.status(200).send(response);
     } catch (err: any) {
