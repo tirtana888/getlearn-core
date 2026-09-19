@@ -228,11 +228,18 @@ export class ChatService {
     // A message of a few words ("gimana", "lanjut") names no topic either; in a lesson-scoped
     // session the lesson itself is the topic.
     const isVague = userMessage.trim().split(/\s+/).length <= 3;
-    if (retrievedChunks.length === 0 && scopedContentIds && (OVERVIEW_QUESTION_RE.test(userMessage) || isVague)) {
+    const isOverview = OVERVIEW_QUESTION_RE.test(userMessage);
+    let contextIsOnlyFallback = false;
+    if (retrievedChunks.length === 0 && scopedContentIds && (isOverview || isVague)) {
       retrievedChunks = await ragService.getLeadingChunks(tenantId, scopedContentIds, 4);
+      // Handed to the model as background so it can read a vague message, but not a passage that
+      // matched the question - so it must not be listed as a source under "makasih ya".
+      contextIsOnlyFallback = retrievedChunks.length > 0 && !isOverview;
     }
 
-    const sourceContentIds = Array.from(new Set(retrievedChunks.map((c) => c.contentItemId)));
+    const sourceContentIds = contextIsOnlyFallback
+      ? []
+      : Array.from(new Set(retrievedChunks.map((c) => c.contentItemId)));
 
     const contextText = retrievedChunks.map((c) => c.chunkText).join('\n---\n');
 
@@ -311,7 +318,7 @@ GAYA BICARA
 
 ISI JAWABAN
 1. Pijakan utama adalah MATERI PELAJARAN di bawah. Jangan mengarang isi materi, angka, nama, atau istilah yang tidak ada di sana, dan jangan mengaku materi berkata sesuatu yang tidak tertulis.
-2. Kamu boleh menambah penjelasan umum yang singkat (contoh, analogi, definisi sederhana) supaya konsepnya mudah dipahami, selama masih satu topik dengan lesson. Tandai dengan jelas, misalnya "Di luar materi, tapi biar gampang: ...".
+2. Kamu boleh menambah penjelasan umum yang singkat (contoh, analogi, definisi sederhana) supaya konsepnya mudah dipahami, selama masih satu topik dengan lesson. WAJIB ditandai dengan awalan singkat seperti "Di luar materi:" atau "Sekadar contoh umum:", supaya siswa tahu mana yang dari materi dan mana tambahanmu.
 3. Kalau materi tidak memuat jawabannya, bilang santai apa yang ada dan tidak ada di materi, lalu arahkan ke bagian terdekat atau tawarkan bantuan lain.
 4. Kalau pertanyaannya jelas tidak berhubungan dengan belajar (politik, gosip, dan sebagainya), tolak dengan ramah dalam satu kalimat dan ajak balik ke lesson.
 5. ${
