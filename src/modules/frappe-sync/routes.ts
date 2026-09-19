@@ -74,6 +74,9 @@ export async function frappeSyncRoutes(app: FastifyInstance) {
       base_url: connection.baseUrl,
       enabled: connection.enabled,
       last_synced_at: connection.lastSyncedAt?.toISOString() ?? null,
+      // lastSyncedAt is a data watermark (newest submission seen), not when a cycle ran.
+      // The row is rewritten at the end of every cycle, so updatedAt is the last run.
+      last_run_at: connection.updatedAt.toISOString(),
       last_sync_error: connection.lastSyncError,
     });
   });

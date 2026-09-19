@@ -90,6 +90,8 @@
     .auth-controls {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
       gap: 0.75rem;
     }
     .input-key {
@@ -145,6 +147,49 @@
       font-size: 0.775rem;
       color: #34D399;
       font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Live refresh status */
+    .live-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-strong);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #34D399;
+      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.5);
+      animation: live-pulse 2.4s ease-out infinite;
+    }
+    .live-chip.paused .live-dot { background: #6B7280; animation: none; }
+    .live-chip.error .live-dot { background: #F87171; animation: none; }
+    .live-chip.loading .live-dot { background: #818CF8; }
+    @keyframes live-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.45); }
+      70% { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+    }
+    /* A value that just changed on a background refresh briefly glows, then settles. */
+    .flash { animation: value-flash 1.2s ease-out; }
+    @keyframes value-flash {
+      0% { color: #A5B4FC; text-shadow: 0 0 12px rgba(129, 140, 248, 0.7); }
+      100% { text-shadow: 0 0 0 rgba(129, 140, 248, 0); }
+    }
+    .fade-in { animation: row-fade 0.35s ease-out; }
+    @keyframes row-fade { from { opacity: 0.35; } to { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) {
+      .live-dot, .flash, .fade-in { animation: none !important; }
     }
 
     /* Container */
@@ -470,6 +515,10 @@
     </div>
 
     <div class="auth-controls">
+      <div class="live-chip" id="liveChip" onclick="toggleAutoRefresh()" title="Klik untuk jeda / lanjutkan auto-refresh">
+        <span class="live-dot"></span>
+        <span id="liveText">Auto-refresh 60 dtk</span>
+      </div>
       <div class="token-chip" id="tokenChip">
         <span>⚡</span>
         <span id="tenantTokenBalance">100,000</span> credits
@@ -719,7 +768,10 @@
       return apiKeyEl.value.trim();
     }
 
+    let activeTab = 'overview';
+
     function switchTab(tabId) {
+      activeTab = tabId;
       const tabs = ['overview', 'learners', 'coach', 'rag'];
       tabs.forEach(t => {
         document.getElementById(`tab-${t}`).style.display = (t === tabId) ? 'block' : 'none';
@@ -733,7 +785,131 @@
       if (tabId === 'learners') loadLearners();
     }
 
-    async function fetchDashboardData() {
+    // ---- Smooth live refresh -------------------------------------------------
+    // Background refreshes never blank the screen: no "Loading..." placeholder, tables are
+    // only rewritten when their content actually changed, changed numbers briefly glow, and
+    // a failed background fetch keeps the last good data on screen instead of an error row.
+    const REFRESH_MS = 60000;
+    let autoRefresh = true;
+    let refreshTimer = null;
+    let refreshing = false;
+    let lastRefreshAt = 0;
+    let lastSync = null; // { runAt: Date|null, error: string|null } from the Frappe connection
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      const next = String(value);
+      if (el.textContent === next) return;
+      const hadValue = el.textContent !== '-' && el.textContent !== '';
+      el.textContent = next;
+      if (hadValue) {
+        el.classList.remove('flash');
+        void el.offsetWidth; // restart the animation
+        el.classList.add('flash');
+      }
+    }
+
+    // Swaps a table body in one assignment, and only if the markup changed.
+    function setRows(tbody, html) {
+      if (tbody.dataset.sig === html) return false;
+      const first = !tbody.dataset.sig;
+      tbody.dataset.sig = html;
+      tbody.innerHTML = html;
+      if (!first) {
+        tbody.classList.remove('fade-in');
+        void tbody.offsetWidth;
+        tbody.classList.add('fade-in');
+      }
+      return true;
+    }
+
+    function fmtClock(d) {
+      return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function renderLiveChip(state) {
+      const chip = document.getElementById('liveChip');
+      const text = document.getElementById('liveText');
+      chip.classList.remove('paused', 'error', 'loading');
+      if (!autoRefresh) {
+        chip.classList.add('paused');
+        text.textContent = 'Auto-refresh dijeda';
+        return;
+      }
+      if (state === 'loading') {
+        chip.classList.add('loading');
+        text.textContent = 'Memperbarui...';
+        return;
+      }
+      if (state === 'error') {
+        chip.classList.add('error');
+        text.textContent = 'Gagal memperbarui, mencoba lagi...';
+        return;
+      }
+      const parts = [`Diperbarui ${fmtClock(new Date(lastRefreshAt))}`];
+      if (lastSync && lastSync.runAt) {
+        parts.push(`sync Frappe ${fmtClock(lastSync.runAt)}`);
+      }
+      text.textContent = parts.join(' · ');
+      chip.title = lastSync && lastSync.error
+        ? `Sync Frappe melaporkan: ${lastSync.error}`
+        : 'Klik untuk jeda / lanjutkan auto-refresh';
+    }
+
+    async function fetchSyncStatus() {
+      try {
+        const res = await fetch('/v1/frappe-sync/connection', {
+          headers: { 'Authorization': `Bearer ${getApiKey()}` }
+        });
+        if (!res.ok) { lastSync = null; return; }
+        const c = await res.json();
+        lastSync = { runAt: c.last_run_at ? new Date(c.last_run_at) : null, error: c.last_sync_error || null };
+      } catch (e) { /* status is cosmetic; keep the previous value */ }
+    }
+
+    async function refreshNow(opts) {
+      const silent = !opts || opts.silent !== false;
+      if (refreshing || !getApiKey()) return;
+      refreshing = true;
+      if (!silent) renderLiveChip('loading');
+      try {
+        const jobs = [fetchDashboardData({ silent: true }), fetchSyncStatus()];
+        if (activeTab === 'learners') jobs.push(loadLearners({ silent: true }));
+        const results = await Promise.all(jobs);
+        if (results.includes(false)) throw new Error('refresh failed');
+        lastRefreshAt = Date.now();
+        renderLiveChip('ok');
+      } catch (e) {
+        renderLiveChip('error');
+      } finally {
+        refreshing = false;
+      }
+    }
+
+    function scheduleRefresh() {
+      clearInterval(refreshTimer);
+      if (!autoRefresh) return;
+      refreshTimer = setInterval(() => {
+        if (document.hidden) return; // no point polling a tab nobody is looking at
+        refreshNow();
+      }, REFRESH_MS);
+    }
+
+    function toggleAutoRefresh() {
+      autoRefresh = !autoRefresh;
+      scheduleRefresh();
+      if (autoRefresh) refreshNow({ silent: false });
+      else renderLiveChip('ok');
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      // Coming back to the tab: catch up right away if the data has gone stale.
+      if (!document.hidden && autoRefresh && Date.now() - lastRefreshAt > REFRESH_MS / 2) refreshNow();
+    });
+
+    // Returns true on success, false on failure, so the caller can tell the chip apart.
+    async function fetchDashboardData(opts) {
+      const silent = !!(opts && opts.silent);
       const apiKey = getApiKey();
       try {
         const res = await fetch('/v1/analytics/overview', {
@@ -744,33 +920,27 @@
           throw new Error(data?.error?.message || `HTTP ${res.status}`);
         }
 
-        // Update Tenant Info
-        document.getElementById('tenantTokenBalance').textContent = Number(data.tenant.token_balance).toLocaleString();
-        
-        // Update Stats
-        document.getElementById('statLearners').textContent = data.summary.total_learners;
-        document.getElementById('statObjectives').textContent = data.summary.total_objectives;
-        document.getElementById('statLessonProgress').textContent =
-          `${data.summary.lessons_complete ?? 0} / ${data.summary.lessons_partial ?? 0}`;
-        document.getElementById('statEvents').textContent = data.summary.total_events;
-        document.getElementById('statAvgMastery').textContent = `${(data.summary.average_mastery_score * 100).toFixed(1)}%`;
-        document.getElementById('statGaps').textContent = data.summary.active_gap_count;
-        document.getElementById('statGapRate').textContent = `${data.summary.gap_percentage}% of measured objectives`;
+        setText('tenantTokenBalance', Number(data.tenant.token_balance).toLocaleString());
 
-        // Update Objectives Table
+        setText('statLearners', data.summary.total_learners);
+        setText('statObjectives', data.summary.total_objectives);
+        setText('statLessonProgress', `${data.summary.lessons_complete ?? 0} / ${data.summary.lessons_partial ?? 0}`);
+        setText('statEvents', data.summary.total_events);
+        setText('statAvgMastery', `${(data.summary.average_mastery_score * 100).toFixed(1)}%`);
+        setText('statGaps', data.summary.active_gap_count);
+        setText('statGapRate', `${data.summary.gap_percentage}% of measured objectives`);
+
         const tbody = document.getElementById('objectivesTableBody');
-        tbody.innerHTML = '';
         if (data.objective_distribution.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No objective data yet. Ingest assessment events to populate.</td></tr>';
+          setRows(tbody, '<tr><td colspan="5" style="text-align: center;">No objective data yet. Ingest assessment events to populate.</td></tr>');
         } else {
-          data.objective_distribution.forEach(obj => {
+          setRows(tbody, data.objective_distribution.map(obj => {
             const pct = Math.round(obj.avg_score * 100);
-            const gapBadge = obj.gap_count > 0 
+            const gapBadge = obj.gap_count > 0
               ? `<span class="badge badge-danger">${obj.gap_count} gaps (${Math.round(obj.gap_rate * 100)}%)</span>`
               : `<span class="badge badge-success">Optimal</span>`;
-
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
+            return `
+            <tr>
               <td><code style="font-family: monospace; color: #818CF8;">${obj.objective_id}</code></td>
               <td style="font-weight: 500; color: #F9FAFB;">${obj.label}</td>
               <td>${obj.learner_count}</td>
@@ -783,14 +953,25 @@
                 </div>
               </td>
               <td>${gapBadge}</td>
-            `;
-            tbody.appendChild(tr);
-          });
+            </tr>`;
+          }).join(''));
         }
+        if (!silent) {
+          lastRefreshAt = Date.now();
+          await fetchSyncStatus();
+          renderLiveChip('ok');
+          scheduleRefresh();
+        }
+        return true;
       } catch (err) {
         console.error("Dashboard error:", err);
-        document.getElementById('objectivesTableBody').innerHTML =
-          `<tr><td colspan="5" style="text-align: center; color: #F87171;">Gagal memuat data: ${err.message}. Cek API key di kanan atas.</td></tr>`;
+        // A background refresh keeps the last good data; only a deliberate load shows the error.
+        if (!silent) {
+          setRows(document.getElementById('objectivesTableBody'),
+            `<tr><td colspan="5" style="text-align: center; color: #F87171;">Gagal memuat data: ${err.message}. Cek API key di kanan atas.</td></tr>`);
+          renderLiveChip('error');
+        }
+        return false;
       }
     }
 
@@ -801,10 +982,14 @@
       return `<span class="badge badge-success">${done} selesai</span> <span class="badge badge-info">${running} berjalan</span>`;
     }
 
-    async function loadLearners() {
+    async function loadLearners(opts) {
+      const silent = !!(opts && opts.silent);
       const apiKey = getApiKey();
       const tbody = document.getElementById('learnersTableBody');
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading learners...</td></tr>';
+      // Show the placeholder only when there is nothing on screen yet.
+      if (!silent && !tbody.dataset.sig) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading learners...</td></tr>';
+      }
 
       try {
         const res = await fetch('/v1/learners', {
@@ -814,32 +999,36 @@
         if (!res.ok) {
           throw new Error(data?.error?.message || `HTTP ${res.status}`);
         }
-        tbody.innerHTML = '';
 
         if (!data.learners || data.learners.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No learners found.</td></tr>';
-          return;
+          setRows(tbody, '<tr><td colspan="7" style="text-align:center;">No learners found.</td></tr>');
+          return true;
         }
 
-        // Also update chat select
+        // Keep the coach sandbox's selected learner across refreshes, and only rebuild the
+        // list when it actually changed - rebuilding would collapse an open dropdown.
         const chatSelect = document.getElementById('chatLearnerSelect');
-        chatSelect.innerHTML = '';
+        const optionSig = data.learners.map(l => `${l.external_ref}|${l.gap_count}`).join(',');
+        if (chatSelect.dataset.sig !== optionSig) {
+          const selected = chatSelect.value;
+          chatSelect.dataset.sig = optionSig;
+          chatSelect.innerHTML = '';
+          data.learners.forEach(l => {
+            const opt = document.createElement('option');
+            opt.value = l.external_ref;
+            opt.textContent = `${l.external_ref} (${l.gap_count} gaps)`;
+            chatSelect.appendChild(opt);
+          });
+          if (selected && [...chatSelect.options].some(o => o.value === selected)) chatSelect.value = selected;
+        }
 
-        data.learners.forEach(l => {
-          // Select option
-          const opt = document.createElement('option');
-          opt.value = l.external_ref;
-          opt.textContent = `${l.external_ref} (${l.gap_count} gaps)`;
-          chatSelect.appendChild(opt);
-
-          // Table Row
+        setRows(tbody, data.learners.map(l => {
           const scoreText = l.avg_mastery_score !== null ? `${Math.round(l.avg_mastery_score * 100)}%` : 'N/A';
           const statusBadge = l.gap_count > 0
             ? `<span class="badge badge-warning">${l.gap_count} Active Gaps</span>`
             : `<span class="badge badge-success">On Track</span>`;
-
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
+          return `
+          <tr>
             <td><strong style="color: #F9FAFB;">${l.external_ref}</strong></td>
             <td>${l.event_count} events</td>
             <td>${lessonProgressCell(l)}</td>
@@ -851,11 +1040,14 @@
                 Intervention &rarr;
               </button>
             </td>
-          `;
-          tbody.appendChild(tr);
-        });
+          </tr>`;
+        }).join(''));
+        return true;
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="7" style="color: #EF4444; text-align: center;">Error loading learners: ${err.message}</td></tr>`;
+        if (!silent) {
+          setRows(tbody, `<tr><td colspan="7" style="color: #EF4444; text-align: center;">Error loading learners: ${err.message}</td></tr>`);
+        }
+        return false;
       }
     }
 
@@ -1139,6 +1331,8 @@
     // Initial load
     if (getApiKey()) {
       fetchDashboardData();
+    } else {
+      renderLiveChip('ok');
     }
   </script>
 </body>
