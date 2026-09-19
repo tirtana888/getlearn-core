@@ -147,7 +147,7 @@ export class ChatService {
       where: { sessionId: session.id },
       orderBy: { createdAt: 'desc' },
       take: 6,
-      select: { sender: true, content: true },
+      select: { sender: true, content: true, sourceContentIds: true },
     });
     const history = recent.reverse();
 
@@ -184,13 +184,28 @@ export class ChatService {
       if (scopedItems.length > 0) scopedContentIds = scopedItems.map((i) => i.id);
     }
 
-    const retrievedChunks = await ragService.searchSimilarChunks(
-      tenantId,
-      retrievalQuery,
-      4,
-      activeThreshold,
-      scopedContentIds
-    );
+    // A follow-up stays on the lesson(s) the coach just answered from: "contohnya?" means examples
+    // of that topic, not of whatever lesson happens to mention examples the most.
+    let retrievedChunks: Awaited<ReturnType<typeof ragService.searchSimilarChunks>> = [];
+    const lastSources = isShortFollowUp
+      ? [...history].reverse().find((m) => m.sender === ChatSender.assistant && m.sourceContentIds.length > 0)
+          ?.sourceContentIds
+      : undefined;
+    if (lastSources && lastSources.length > 0) {
+      const allowed = scopedContentIds ? lastSources.filter((id) => scopedContentIds!.includes(id)) : lastSources;
+      if (allowed.length > 0) {
+        retrievedChunks = await ragService.searchSimilarChunks(tenantId, retrievalQuery, 4, activeThreshold, allowed);
+      }
+    }
+    if (retrievedChunks.length === 0) {
+      retrievedChunks = await ragService.searchSimilarChunks(
+        tenantId,
+        retrievalQuery,
+        4,
+        activeThreshold,
+        scopedContentIds
+      );
+    }
     const sourceContentIds = Array.from(new Set(retrievedChunks.map((c) => c.contentItemId)));
 
     const contextText = retrievedChunks.map((c) => c.chunkText).join('\n---\n');
