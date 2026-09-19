@@ -111,18 +111,20 @@ export class FrappeCatalogService {
     const courseTitle = new Map<string, string>(courses.map((c) => [c.name, c.title || c.name]));
 
     // Lesson order: course.chapters[].idx, then chapter.lessons[].idx.
-    const sequence = new Map<string, { courseId: string; seq: number }>();
+    const sequence = new Map<string, { courseId: string; seq: number; chapterId: string }>();
     for (const course of courses) {
       const courseDoc = await this.getDoc(auth, 'LMS Course', course.name);
       const chapters: { chapter: string }[] = courseDoc.chapters || [];
       for (let ci = 0; ci < chapters.length; ci++) {
         const chapterDoc = await this.getDoc(auth, 'Course Chapter', chapters[ci].chapter);
+        await this.upsertChapter(tenantId, course.name, ci, chapterDoc);
         const lessons: { lesson: string }[] = chapterDoc.lessons || [];
         for (let li = 0; li < lessons.length; li++) {
-          sequence.set(lessons[li].lesson, { courseId: course.name, seq: ci * 1000 + li });
+          sequence.set(lessons[li].lesson, { courseId: course.name, seq: ci * 1000 + li, chapterId: chapters[ci].chapter });
         }
       }
     }
+    await this.syncAssignments(tenantId, auth);
 
     const lessonRows = await this.getList(auth, 'Course Lesson', ['name', 'title', 'course', 'content', 'modified']);
     const quizRows = await this.getList(auth, 'LMS Quiz', ['name', 'lesson']);
@@ -147,6 +149,7 @@ export class FrappeCatalogService {
           courseId,
           courseLabel: courseId ? courseTitle.get(courseId) ?? courseId : null,
           sequence: placement?.seq ?? null,
+          chapterId: placement?.chapterId ?? null,
           assessmentRef: quizRef,
         },
         create: {
@@ -156,6 +159,7 @@ export class FrappeCatalogService {
           courseId,
           courseLabel: courseId ? courseTitle.get(courseId) ?? courseId : null,
           sequence: placement?.seq ?? null,
+          chapterId: placement?.chapterId ?? null,
           assessmentRef: quizRef,
         },
       });
@@ -184,6 +188,63 @@ export class FrappeCatalogService {
       lessonsWithQuiz,
       contentQueued,
     };
+  }
+
+  /** A Frappe date ("2026-10-01") or datetime as a UTC-midnight Date of its date part, like Frappe's getdate(). */
+  toDate(value: unknown): Date | null {
+    if (!value) return null;
+    const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : null;
+  }
+
+  toDateTime(value: unknown): Date | null {
+    if (!value) return null;
+    const d = new Date(String(value).replace(' ', 'T').replace(/(\.\d+)?$/, '') + 'Z');
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  private async upsertChapter(tenantId: string, courseId: string, sequence: number, doc: any) {
+    const data = {
+      courseId,
+      title: doc.title || doc.name,
+      sequence,
+      dripType: doc.drip_type || null,
+      dripDate: this.toDate(doc.drip_date),
+      dripDays: doc.drip_days != null ? Number(doc.drip_days) : null,
+      deadlineDays: doc.deadline_days != null ? Number(doc.deadline_days) : null,
+    };
+    await prisma.courseChapter.upsert({
+      where: { tenantId_chapterId: { tenantId, chapterId: doc.name } },
+      update: data,
+      create: { tenantId, chapterId: doc.name, ...data },
+    });
+  }
+
+  /** Assignments and their own schedule; small (tens), so a full read every catalog refresh. */
+  private async syncAssignments(tenantId: string, auth: FrappeAuth) {
+    const rows = await this.getList(auth, 'LMS Assignment', [
+      'name', 'title', 'course', 'enable_scheduling', 'schedule_start', 'schedule_end',
+      'deadline_type', 'deadline_days', 'drip_type', 'drip_date', 'drip_days',
+    ]);
+    for (const a of rows) {
+      const data = {
+        courseId: a.course || null,
+        title: a.title || a.name,
+        enableScheduling: Boolean(Number(a.enable_scheduling)),
+        scheduleStart: this.toDateTime(a.schedule_start),
+        scheduleEnd: this.toDateTime(a.schedule_end),
+        deadlineType: a.deadline_type || null,
+        deadlineDays: a.deadline_days != null ? Number(a.deadline_days) : null,
+        dripType: a.drip_type || null,
+        dripDate: this.toDate(a.drip_date),
+        dripDays: a.drip_days != null ? Number(a.drip_days) : null,
+      };
+      await prisma.assignment.upsert({
+        where: { tenantId_assignmentId: { tenantId, assignmentId: a.name } },
+        update: data,
+        create: { tenantId, assignmentId: a.name, ...data },
+      });
+    }
   }
 
   /** Only lessons whose content version changed are re-extracted; the rest are left alone. */

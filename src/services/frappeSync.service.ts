@@ -35,6 +35,8 @@ interface FrappeEnrollmentRow {
   member: string;
   course?: string | null;
   progress?: number | null;
+  creation?: string | null;
+  enrollment_from_batch?: string | null;
 }
 
 interface FrappeProgressRow {
@@ -121,6 +123,20 @@ export class FrappeSyncService {
     } catch (err: any) {
       result.errors++;
       await this.recordError(tenantId, `lesson progress pull failed: ${err.message || err}`);
+    }
+
+    try {
+      await this.syncQuizAttempts(tenantId, connection.baseUrl, connection.apiKey, connection.apiSecret);
+    } catch (err: any) {
+      result.errors++;
+      await this.recordError(tenantId, `quiz attempts pull failed: ${err.message || err}`);
+    }
+
+    try {
+      await this.syncAssignmentSubmissions(tenantId, connection.baseUrl, connection.apiKey, connection.apiSecret);
+    } catch (err: any) {
+      result.errors++;
+      await this.recordError(tenantId, `assignment submissions pull failed: ${err.message || err}`);
     }
 
     // Lesson-as-objective is the level of granularity we ship with: quiz.lesson
@@ -323,7 +339,9 @@ export class FrappeSyncService {
     apiSecret: string
   ): Promise<number> {
     const filters = encodeURIComponent(JSON.stringify([['member_type', '=', 'Student']]));
-    const fields = encodeURIComponent(JSON.stringify(['member', 'course', 'progress']));
+    const fields = encodeURIComponent(
+      JSON.stringify(['member', 'course', 'progress', 'creation', 'enrollment_from_batch'])
+    );
     const url =
       `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent('LMS Enrollment')}` +
       `?filters=${filters}&fields=${fields}&limit_page_length=0`;
@@ -345,6 +363,24 @@ export class FrappeSyncService {
     });
     const courseLabel = new Map(labelled.map((o) => [o.courseId as string, o.courseLabel]));
 
+    // Batch start dates anchor "days after batch start" drip rules.
+    const batchStart = new Map<string, Date>();
+    try {
+      const bres = await fetch(
+        `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent('LMS Batch')}` +
+          `?fields=${encodeURIComponent(JSON.stringify(['name', 'start_date']))}&limit_page_length=0`,
+        { headers: { Authorization: this.authHeader(apiKey, apiSecret) } }
+      );
+      if (bres.ok) {
+        for (const b of ((await bres.json()) as any).data || []) {
+          const d = frappeCatalogService.toDate(b.start_date);
+          if (d) batchStart.set(b.name, d);
+        }
+      }
+    } catch {
+      // Batch dates only refine drip anchors; the roster itself must not fail over them.
+    }
+
     const learnerIds = new Map<string, string>();
     for (const member of distinctMembers) {
       const externalRef = this.anonymizeLearnerId(member);
@@ -360,20 +396,133 @@ export class FrappeSyncService {
       const learnerDbId = learnerIds.get(row.member);
       if (!learnerDbId || !row.course) continue;
       const pct = Number(row.progress) || 0;
+      const anchors = {
+        enrolledAt: frappeCatalogService.toDate(row.creation),
+        batchId: row.enrollment_from_batch || null,
+        batchStartDate: row.enrollment_from_batch ? batchStart.get(row.enrollment_from_batch) ?? null : null,
+      };
       await prisma.enrollment.upsert({
         where: { tenantId_learnerId_courseId: { tenantId, learnerId: learnerDbId, courseId: row.course } },
-        update: { progressPct: pct, courseLabel: courseLabel.get(row.course) ?? null },
+        update: { progressPct: pct, courseLabel: courseLabel.get(row.course) ?? null, ...anchors },
         create: {
           tenantId,
           learnerId: learnerDbId,
           courseId: row.course,
           courseLabel: courseLabel.get(row.course) ?? null,
           progressPct: pct,
+          ...anchors,
         },
       });
     }
 
     return distinctMembers.size;
+  }
+
+  /**
+   * Every quiz attempt with the LMS's own score / out-of / pass mark, so a learner can ask the coach
+   * "berapa nilaiku di quiz X?". Separate from the answer-level ingest that feeds mastery. The list
+   * API returns these columns without the per-question child table, so this stays one light request.
+   */
+  private async syncQuizAttempts(
+    tenantId: string,
+    baseUrl: string,
+    apiKey: string,
+    apiSecret: string
+  ): Promise<number> {
+    const fields = encodeURIComponent(
+      JSON.stringify(['name', 'member', 'quiz', 'quiz_title', 'course', 'score', 'score_out_of', 'percentage', 'passing_percentage', 'creation'])
+    );
+    const res = await fetch(
+      `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent('LMS Quiz Submission')}` +
+        `?fields=${fields}&limit_page_length=0&order_by=creation%20asc`,
+      { headers: { Authorization: this.authHeader(apiKey, apiSecret) } }
+    );
+    if (!res.ok) {
+      throw new Error(`Frappe API error ${res.status} listing quiz attempts: ${await res.text()}`);
+    }
+    const rows: any[] = ((await res.json()) as any).data || [];
+
+    const learnerIds = new Map<string, string>();
+    let stored = 0;
+    for (const row of rows) {
+      if (!row.member || !row.quiz) continue;
+      let learnerId = learnerIds.get(row.member);
+      if (!learnerId) {
+        const learner = await prisma.learner.findUnique({
+          where: { tenantId_externalRef: { tenantId, externalRef: this.anonymizeLearnerId(row.member) } },
+          select: { id: true },
+        });
+        if (!learner) continue;
+        learnerId = learner.id;
+        learnerIds.set(row.member, learnerId);
+      }
+      const num = (v: unknown) => (v == null || v === '' ? null : Number(v));
+      const data = {
+        learnerId,
+        quizId: row.quiz,
+        quizTitle: row.quiz_title || row.quiz,
+        courseId: row.course || null,
+        score: num(row.score),
+        scoreOutOf: num(row.score_out_of),
+        percentage: num(row.percentage),
+        passingPercentage: num(row.passing_percentage),
+        submittedAt: frappeCatalogService.toDateTime(row.creation) ?? new Date(),
+      };
+      await prisma.quizAttempt.upsert({
+        where: { tenantId_submissionId: { tenantId, submissionId: row.name } },
+        update: data,
+        create: { tenantId, submissionId: row.name, ...data },
+      });
+      stored++;
+    }
+    return stored;
+  }
+
+  /**
+   * Status of each learner's assignment submissions (never their content). Small table, so a full
+   * read every cycle; rows for learners we do not track (staff, unenrolled) are skipped.
+   */
+  private async syncAssignmentSubmissions(
+    tenantId: string,
+    baseUrl: string,
+    apiKey: string,
+    apiSecret: string
+  ): Promise<number> {
+    const fields = encodeURIComponent(JSON.stringify(['member', 'assignment', 'status', 'modified']));
+    const res = await fetch(
+      `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent('LMS Assignment Submission')}` +
+        `?fields=${fields}&limit_page_length=0`,
+      { headers: { Authorization: this.authHeader(apiKey, apiSecret) } }
+    );
+    if (!res.ok) {
+      throw new Error(`Frappe API error ${res.status} listing LMS Assignment Submission: ${await res.text()}`);
+    }
+    const rows: Array<{ member: string; assignment: string; status: string; modified: string }> =
+      ((await res.json()) as any).data || [];
+
+    let stored = 0;
+    for (const row of rows) {
+      if (!row.member || !row.assignment) continue;
+      const learner = await prisma.learner.findUnique({
+        where: { tenantId_externalRef: { tenantId, externalRef: this.anonymizeLearnerId(row.member) } },
+        select: { id: true },
+      });
+      if (!learner) continue;
+      const modified = frappeCatalogService.toDateTime(row.modified) ?? new Date();
+      await prisma.assignmentSubmission.upsert({
+        where: { tenantId_learnerId_assignmentId: { tenantId, learnerId: learner.id, assignmentId: row.assignment } },
+        update: { status: row.status || 'Not Graded', sourceModified: modified },
+        create: {
+          tenantId,
+          learnerId: learner.id,
+          assignmentId: row.assignment,
+          status: row.status || 'Not Graded',
+          sourceModified: modified,
+        },
+      });
+      stored++;
+    }
+    return stored;
   }
 
   /**

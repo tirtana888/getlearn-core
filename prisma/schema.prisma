@@ -14,17 +14,21 @@ model Tenant {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  learners         Learner[]
-  objectives       LearningObjective[]
-  contentItems     ContentItem[]
-  assessmentItems  AssessmentItem[]
-  assessmentEvents AssessmentEvent[]
-  masteryRecords   MasteryRecord[]
-  lessonProgress   LessonProgress[]
-  enrollments      Enrollment[]
-  contentChunks    ContentChunk[]
-  chatSessions     ChatSession[]
-  frappeConnection FrappeConnection?
+  learners              Learner[]
+  objectives            LearningObjective[]
+  contentItems          ContentItem[]
+  assessmentItems       AssessmentItem[]
+  assessmentEvents      AssessmentEvent[]
+  masteryRecords        MasteryRecord[]
+  lessonProgress        LessonProgress[]
+  enrollments           Enrollment[]
+  contentChunks         ContentChunk[]
+  chatSessions          ChatSession[]
+  frappeConnection      FrappeConnection?
+  courseChapters        CourseChapter[]
+  quizAttempts          QuizAttempt[]
+  assignments           Assignment[]
+  assignmentSubmissions AssignmentSubmission[]
 
   @@map("tenants")
 }
@@ -58,12 +62,14 @@ model Learner {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assessmentEvents AssessmentEvent[]
-  masteryRecords   MasteryRecord[]
-  lessonProgress   LessonProgress[]
-  enrollments      Enrollment[]
-  chatSessions     ChatSession[]
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assessmentEvents      AssessmentEvent[]
+  masteryRecords        MasteryRecord[]
+  lessonProgress        LessonProgress[]
+  enrollments           Enrollment[]
+  quizAttempts          QuizAttempt[]
+  assignmentSubmissions AssignmentSubmission[]
+  chatSessions          ChatSession[]
 
   @@unique([tenantId, externalRef])
   @@index([tenantId])
@@ -78,6 +84,7 @@ model LearningObjective {
   courseId      String?  @map("course_id")
   courseLabel   String?  @map("course_label")
   sequence      Int? // order of this lesson within its course
+  chapterId     String?  @map("chapter_id") // LMS chapter this lesson belongs to
   assessmentRef String?  @map("assessment_ref") // id of the quiz attached to this lesson, if any
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -275,13 +282,17 @@ model LessonProgress {
 
 // A learner's enrollment in a course (what "your courses" means for recommendations).
 model Enrollment {
-  id          String   @id @default(uuid())
-  tenantId    String   @map("tenant_id")
-  learnerId   String   @map("learner_id")
-  courseId    String   @map("course_id")
-  courseLabel String?  @map("course_label")
-  progressPct Float    @default(0) @map("progress_pct")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id             String    @id @default(uuid())
+  tenantId       String    @map("tenant_id")
+  learnerId      String    @map("learner_id")
+  courseId       String    @map("course_id")
+  courseLabel    String?   @map("course_label")
+  progressPct    Float     @default(0) @map("progress_pct")
+  // Anchors for the LMS's drip / deadline rules (date part of LMS Enrollment.creation, and the batch start).
+  enrolledAt     DateTime? @map("enrolled_at")
+  batchId        String?   @map("batch_id")
+  batchStartDate DateTime? @map("batch_start_date")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   learner Learner @relation(fields: [learnerId], references: [id], onDelete: Cascade)
@@ -289,4 +300,92 @@ model Enrollment {
   @@unique([tenantId, learnerId, courseId])
   @@index([tenantId, learnerId])
   @@map("enrollments")
+}
+
+// A chapter of a course with its release (drip) and deadline rules, pulled from the LMS.
+// getlearn evaluates the rules per learner itself, so no LMS-side code is involved.
+model CourseChapter {
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  chapterId    String    @map("chapter_id") // the LMS's own chapter id
+  courseId     String    @map("course_id")
+  title        String
+  sequence     Int?
+  dripType     String?   @map("drip_type") // "On a fixed date" | "Days after enrollment" | "Days after batch start"
+  dripDate     DateTime? @map("drip_date")
+  dripDays     Int?      @map("drip_days")
+  deadlineDays Int?      @map("deadline_days")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, chapterId])
+  @@index([tenantId, courseId])
+  @@map("course_chapters")
+}
+
+model Assignment {
+  id               String    @id @default(uuid())
+  tenantId         String    @map("tenant_id")
+  assignmentId     String    @map("assignment_id") // the LMS's own assignment id
+  courseId         String?   @map("course_id")
+  title            String
+  enableScheduling Boolean   @default(false) @map("enable_scheduling")
+  scheduleStart    DateTime? @map("schedule_start")
+  scheduleEnd      DateTime? @map("schedule_end")
+  deadlineType     String?   @map("deadline_type") // "Fixed date" | "Days after release"
+  deadlineDays     Int?      @map("deadline_days")
+  dripType         String?   @map("drip_type")
+  dripDate         DateTime? @map("drip_date")
+  dripDays         Int?      @map("drip_days")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, assignmentId])
+  @@index([tenantId, courseId])
+  @@map("assignments")
+}
+
+// Only the status of a learner's submission - never its content.
+model AssignmentSubmission {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  learnerId      String   @map("learner_id")
+  assignmentId   String   @map("assignment_id")
+  status         String // "Pass" | "Fail" | "Not Graded" | "Not Applicable"
+  sourceModified DateTime @map("source_modified")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  learner Learner @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, learnerId, assignmentId])
+  @@index([tenantId, learnerId])
+  @@map("assignment_submissions")
+}
+
+// One attempt at a quiz, as the LMS recorded it (its own score, out-of and pass mark). Separate
+// from mastery, which is derived per lesson from individual answers.
+model QuizAttempt {
+  id                String   @id @default(uuid())
+  tenantId          String   @map("tenant_id")
+  learnerId         String   @map("learner_id")
+  submissionId      String   @map("submission_id") // the LMS's own submission id
+  quizId            String   @map("quiz_id")
+  quizTitle         String   @map("quiz_title")
+  courseId          String?  @map("course_id")
+  score             Int?
+  scoreOutOf        Int?     @map("score_out_of")
+  percentage        Int?
+  passingPercentage Int?     @map("passing_percentage")
+  submittedAt       DateTime @map("submitted_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  learner Learner @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, submissionId])
+  @@index([tenantId, learnerId])
+  @@map("quiz_attempts")
 }
