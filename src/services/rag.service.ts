@@ -148,6 +148,36 @@ export class RagService {
   }
 
   /**
+   * The opening chunks of specific content items, in reading order. Used for "what is this
+   * lesson about?" style questions, which are not similar to any one passage of the material
+   * and so never pass a similarity threshold, yet are answerable from the lesson's start.
+   */
+  async getLeadingChunks(
+    tenantId: string,
+    contentItemIds: string[],
+    limit = 4
+  ): Promise<Array<{ id: string; contentItemId: string; chunkIndex: number; chunkText: string; similarity: number }>> {
+    if (!contentItemIds.length) return [];
+    const rows: any = await prisma.$queryRawUnsafe(
+      `SELECT id, content_item_id, chunk_index, chunk_text
+       FROM content_chunks
+       WHERE tenant_id = $1 AND content_item_id = ANY($2::text[])
+       ORDER BY content_item_id ASC, chunk_index ASC
+       LIMIT $3`,
+      tenantId,
+      contentItemIds,
+      limit
+    );
+    return rows.map((r: any) => ({
+      id: r.id,
+      contentItemId: r.content_item_id,
+      chunkIndex: r.chunk_index,
+      chunkText: r.chunk_text,
+      similarity: 1,
+    }));
+  }
+
+  /**
    * Semantic search using pgvector cosine distance
    */
   async searchSimilarChunks(

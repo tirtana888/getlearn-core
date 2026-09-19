@@ -16,6 +16,14 @@ import { ChatScope, ChatSender } from '@prisma/client';
  */
 export const CHAT_SIMILARITY_THRESHOLD = 0.6;
 
+/**
+ * Questions about the lesson as a whole ("ini materi tentang apa?", "rangkum lesson ini").
+ * They resemble no single passage, so similarity search finds nothing and the coach would
+ * refuse a perfectly answerable question.
+ */
+export const OVERVIEW_QUESTION_RE =
+  /(tentang apa|apa isi|isi (materi|lesson|pelajaran|modul)|membahas apa|belajar apa|rangkum|ringkas|ringkasan|overview|garis besar|inti (dari )?(materi|lesson|bab))|(materi|lesson|pelajaran|bab|modul|topik).{0,25}(apa|tentang|isi|bahas)/i;
+
 export class ChatService {
   private ai: GoogleGenAI | null = null;
 
@@ -206,6 +214,12 @@ export class ChatService {
         scopedContentIds
       );
     }
+    // Lesson-scoped session + a question about the lesson itself: answer from its opening
+    // material instead of refusing for lack of a similar passage.
+    if (retrievedChunks.length === 0 && scopedContentIds && OVERVIEW_QUESTION_RE.test(userMessage)) {
+      retrievedChunks = await ragService.getLeadingChunks(tenantId, scopedContentIds, 4);
+    }
+
     const sourceContentIds = Array.from(new Set(retrievedChunks.map((c) => c.contentItemId)));
 
     const contextText = retrievedChunks.map((c) => c.chunkText).join('\n---\n');
