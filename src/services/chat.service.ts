@@ -10,10 +10,11 @@ import { ChatScope, ChatSender } from '@prisma/client';
 
 /**
  * Minimum cosine similarity threshold for retrieved chunks to be considered relevant for AI tutoring.
- * Calibrated in the 0.55 - 0.65 range for semantic embeddings (text-embedding-004).
- * Chunks below this threshold are discarded to prevent hallucinated answers on off-topic questions.
+ * Calibrated against gemini-embedding-001 on real Nusadaya material: on-topic questions score
+ * 0.65 - 0.87 for their best chunk, while off-topic ones ("Siapa presiden Indonesia?") peak at
+ * ~0.57. Chunks below this threshold are discarded so off-topic questions get no context.
  */
-export const CHAT_SIMILARITY_THRESHOLD = 0.55;
+export const CHAT_SIMILARITY_THRESHOLD = 0.6;
 
 export class ChatService {
   private ai: GoogleGenAI | null = null;
@@ -140,6 +141,16 @@ export class ChatService {
 
     let tokensUsed = 0;
 
+    // Recent turns, read before saving this message. Without them a follow-up such as
+    // "bisa kasih contohnya?" has no topic of its own and retrieves unrelated chunks.
+    const recent = await prisma.chatMessage.findMany({
+      where: { sessionId: session.id },
+      orderBy: { createdAt: 'desc' },
+      take: 6,
+      select: { sender: true, content: true },
+    });
+    const history = recent.reverse();
+
     // 1. Save User Message
     await prisma.chatMessage.create({
       data: {
@@ -154,7 +165,32 @@ export class ChatService {
     // In production with Gemini embeddings (text-embedding-004), threshold is CHAT_SIMILARITY_THRESHOLD (0.55).
     // In dev / fallback mode with deterministic n-gram hashing, threshold adapts to 0.25 to prevent false rejections.
     const activeThreshold = ragService.hasGeminiEmbeddings() ? CHAT_SIMILARITY_THRESHOLD : 0.25;
-    const retrievedChunks = await ragService.searchSimilarChunks(tenantId, userMessage, 3, activeThreshold);
+
+    // A short message ("contohnya?", "jelaskan lebih lanjut") carries no topic, so search with
+    // the learner's previous question(s) as well.
+    const isShortFollowUp = userMessage.trim().split(/\s+/).length < 6;
+    const retrievalQuery = isShortFollowUp
+      ? [...history.filter((m) => m.sender === ChatSender.user).slice(-2).map((m) => m.content), userMessage].join(' ')
+      : userMessage;
+
+    // A session scoped to specific objectives only searches the material of those lessons.
+    let scopedContentIds: string[] | undefined;
+    if (session.scope === 'objective' && session.objectiveIds.length > 0) {
+      const scopedItems = await prisma.contentItem.findMany({
+        where: { tenantId, objectiveIds: { hasSome: session.objectiveIds } },
+        select: { id: true },
+      });
+      // No indexed material for the chosen objective: search everything rather than nothing.
+      if (scopedItems.length > 0) scopedContentIds = scopedItems.map((i) => i.id);
+    }
+
+    const retrievedChunks = await ragService.searchSimilarChunks(
+      tenantId,
+      retrievalQuery,
+      4,
+      activeThreshold,
+      scopedContentIds
+    );
     const sourceContentIds = Array.from(new Set(retrievedChunks.map((c) => c.contentItemId)));
 
     const contextText = retrievedChunks.map((c) => c.chunkText).join('\n---\n');
@@ -217,16 +253,26 @@ ATURAN GUARDRAIL KETAT:
         }
 4. Jawab dalam Bahasa Indonesia yang santun dan menyemangati.`;
 
+        const transcript = history
+          .map((m) => `${m.sender === ChatSender.user ? 'SISWA' : 'COACH'}: ${m.content.slice(0, 600)}`)
+          .join('\n');
+
         const prompt = `MATERI PELAJARAN:
 ${contextText}
-
+${transcript ? `\nRIWAYAT PERCAKAPAN (untuk memahami konteks pertanyaan lanjutan):\n${transcript}\n` : ''}
 PERTANYAAN SISWA:
 ${userMessage}`;
 
-        const modelRes = await this.ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: `${systemPrompt}\n\n${prompt}`,
-        });
+        // Bounded wait: a hung Gemini call must not hold the learner's request open indefinitely.
+        const modelRes = await Promise.race([
+          this.ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `${systemPrompt}\n\n${prompt}`,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Gemini generation timed out after 45s')), 45000)
+          ),
+        ]);
 
         assistantReply = modelRes.text || '';
 
@@ -241,7 +287,11 @@ ${userMessage}`;
           data: { tokenBalance: { decrement: genTokens } },
         });
       } catch (err) {
-        console.warn('Gemini text generation failed, using fallback coach response:', err);
+        console.warn('Gemini text generation failed:', err);
+        // With Gemini configured, dumping a raw chunk as "the answer" reads as an irrelevant
+        // reply, so say plainly that the coach is unavailable instead.
+        assistantReply =
+          'Maaf, AI Study Coach sedang sulit dijangkau. Silakan coba kirim pertanyaanmu lagi sebentar lagi.';
       }
     }
 

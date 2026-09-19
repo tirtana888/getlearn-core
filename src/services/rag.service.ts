@@ -154,7 +154,8 @@ export class RagService {
     tenantId: string,
     queryText: string,
     limit = 5,
-    minSimilarity?: number
+    minSimilarity?: number,
+    contentItemIds?: string[]
   ): Promise<
     Array<{
       id: string;
@@ -187,16 +188,20 @@ export class RagService {
 
     const vectorStr = `[${queryVector.join(',')}]`;
 
+    // Optional restriction to specific content items (e.g. the lessons a chat session is scoped to).
+    const scoped = Array.isArray(contentItemIds) && contentItemIds.length > 0;
     const results: any = await prisma.$queryRawUnsafe(
       `SELECT id, content_item_id, chunk_index, chunk_text,
               ROUND((1 - (embedding <=> $1::vector))::numeric, 4) AS similarity
        FROM content_chunks
        WHERE tenant_id = $2 AND embedding IS NOT NULL
+       ${scoped ? 'AND content_item_id = ANY($4::text[])' : ''}
        ORDER BY embedding <=> $1::vector ASC
        LIMIT $3`,
       vectorStr,
       tenantId,
-      limit
+      limit,
+      ...(scoped ? [contentItemIds] : [])
     );
 
     const mapped = results.map((r: any) => ({
