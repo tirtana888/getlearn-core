@@ -11,7 +11,22 @@ import { prisma } from '../lib/prisma.js';
  */
 
 const DAY_MS = 86_400_000;
-const MAX_CHARS = 3500;
+const MAX_CHARS = 4000;
+// Each part gets its own budget. A learner in many courses has a long drip schedule; without
+// separate budgets it used up the whole limit and the scores and assignments never made it in.
+const BUDGET = { tasks: 1100, scores: 1000, schedule: 1700 } as const;
+
+/** Keeps whole lines, in order, until the budget is spent. */
+function within(lines: string[], budget: number): string[] {
+  const out: string[] = [];
+  let used = 0;
+  for (const line of lines) {
+    if (used + line.length + 1 > budget) break;
+    out.push(line);
+    used += line.length + 1;
+  }
+  return out;
+}
 
 export interface LmsContextInput {
   /** Today as YYYY-MM-DD in the school's timezone. */
@@ -82,8 +97,9 @@ export function renderLmsContext(input: LmsContextInput): string {
   const { today } = input;
   const label = (courseId: string | null) => (courseId ? input.courseLabels[courseId] ?? courseId : '');
   const anchors = new Map(input.enrollments.map((e) => [e.courseId, e]));
-  const lines: string[] = [`Tanggal hari ini: ${today}`];
-  let hasContent = false;
+  const schedule: string[] = [];
+  const tasks: string[] = [];
+  const scores: string[] = [];
 
   // ---- course schedule: chapters that are still locked, passed and upcoming chapter deadlines
   for (const enrollment of input.enrollments) {
@@ -105,19 +121,18 @@ export function renderLmsContext(input: LmsContextInput): string {
     const notes: string[] = [];
     if (locked.length) {
       locked.sort();
-      notes.push('bab belum dibuka (drip): ' + locked.slice(0, 4).map(([d, t]) => `${t} (dibuka ${d})`).join('; '));
+      notes.push('bab belum dibuka (drip): ' + locked.slice(0, 3).map(([d, t]) => `${t} (dibuka ${d})`).join('; '));
     }
     if (closed.length) {
       closed.sort();
-      notes.push('deadline bab sudah lewat: ' + closed.slice(-4).map(([d, t]) => `${t} (${d})`).join('; '));
+      notes.push('deadline bab sudah lewat: ' + closed.slice(-2).map(([d, t]) => `${t} (${d})`).join('; '));
     }
     if (upcoming.length) {
       upcoming.sort();
-      notes.push('deadline bab berikutnya: ' + upcoming.slice(0, 3).map(([d, t]) => `${t} (${d})`).join('; '));
+      notes.push('deadline bab berikutnya: ' + upcoming.slice(0, 2).map(([d, t]) => `${t} (${d})`).join('; '));
     }
     if (notes.length) {
-      lines.push(`- ${label(enrollment.courseId)}: ${notes.join(' | ')}`);
-      hasContent = true;
+      schedule.push(`- ${label(enrollment.courseId)}: ${notes.join(' | ')}`);
     }
   }
 
@@ -161,9 +176,8 @@ export function renderLmsContext(input: LmsContextInput): string {
 
     rows.sort((x, y) => x.rank[0] - y.rank[0] || x.rank[1] - y.rank[1] || x.rank[2].localeCompare(y.rank[2]));
     const done = input.assignments.filter((a) => status.get(a.assignmentId)).length;
-    lines.push(`Tugas (assignment): ${done} dari ${input.assignments.length} sudah dikumpulkan.`);
-    lines.push(...rows.slice(0, 10).map((r) => r.text));
-    hasContent = true;
+    tasks.push(`Tugas (assignment): ${done} dari ${input.assignments.length} sudah dikumpulkan.`);
+    tasks.push(...rows.slice(0, 10).map((r) => r.text));
   }
 
   // ---- quiz scores, one line per quiz (best and latest attempt)
@@ -202,14 +216,22 @@ export function renderLmsContext(input: LmsContextInput): string {
       .sort((a, b) => b.at - a.at);
 
     const bests = summaries.map((s) => s.best).filter((v): v is number => v != null);
-    lines.push(
+    scores.push(
       `Skor quiz (${summaries.length} quiz` + (bests.length ? `, rata-rata nilai terbaik ${Math.round(bests.reduce((s, v) => s + v, 0) / bests.length)}%` : '') + '):'
     );
-    lines.push(...summaries.slice(0, 10).map((s) => s.text));
-    hasContent = true;
+    scores.push(...summaries.slice(0, 10).map((s) => s.text));
   }
 
-  return hasContent ? lines.join('\n').slice(0, MAX_CHARS) : '';
+  if (!schedule.length && !tasks.length && !scores.length) return '';
+  // Most decision-relevant first: what is owed, what was scored, then what opens/closes when.
+  return [
+    `Tanggal hari ini: ${today}`,
+    ...within(tasks, BUDGET.tasks),
+    ...within(scores, BUDGET.scores),
+    ...within(schedule, BUDGET.schedule),
+  ]
+    .join('\n')
+    .slice(0, MAX_CHARS);
 }
 
 /** Loads one learner's data and renders it. Best effort: never throws into the chat. */

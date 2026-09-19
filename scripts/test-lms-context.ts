@@ -65,8 +65,21 @@ check('quiz without stored percentage derives it from score/out-of', out.include
 check('quiz summary count and average of best scores', out.includes('Skor quiz (2 quiz, rata-rata nilai terbaik 55%)'));
 check('most recently attempted quiz first', out.indexOf('Kuis PMS') < out.indexOf('Ujian Unit 1 ['));
 
+const manyCourses: LmsContextInput = {
+  ...input,
+  enrollments: Array.from({ length: 12 }, (_, i) => ({ courseId: `k${i}`, enrolledAt: d('2026-09-15'), batchStartDate: null })),
+  courseLabels: Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`k${i}`, `Course panjang nomor ${i} dengan nama cukup panjang`])),
+  chapters: Array.from({ length: 12 }, (_, i) => Array.from({ length: 4 }, (_, j) => ({
+    chapterId: `k${i}c${j}`, courseId: `k${i}`, title: `Bab ${j} yang judulnya lumayan panjang sekali`, dripType: 'On a fixed date',
+    dripDate: d(`2026-10-${String(10 + j).padStart(2, '0')}`), dripDays: null, deadlineDays: 7,
+  }))).flat(),
+};
+const crowded = renderLmsContext(manyCourses);
+check('12 courses of drip do not crowd out assignments and quiz scores', crowded.includes('Tugas (assignment):') && crowded.includes('Skor quiz (') && crowded.includes('Ujian Unit 1'));
+check('crowded output still within the cap', crowded.length <= 4000, String(crowded.length));
+
 check('no enrollments/assignments/attempts -> empty string', renderLmsContext({ ...input, enrollments: [], assignments: [], quizAttempts: [] }) === '');
-check('output is capped', renderLmsContext({ ...input, assignments: Array.from({ length: 60 }, (_, i) => ({ ...input.assignments[0], assignmentId: `x${i}`, title: 'T'.repeat(200) })) }).length <= 3500);
+check('output is capped', renderLmsContext({ ...input, assignments: Array.from({ length: 60 }, (_, i) => ({ ...input.assignments[0], assignmentId: `x${i}`, title: 'T'.repeat(200) })) }).length <= 4000);
 
 console.log(failures === 0 ? '\nAll LMS-context checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
