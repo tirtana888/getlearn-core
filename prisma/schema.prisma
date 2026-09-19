@@ -244,6 +244,7 @@ model ChatMessage {
   content          String     @db.Text
   sourceContentIds String[]   @map("source_content_ids") // Badges / lesson citations
   audioUrl         String?    @map("audio_url") // Fish Audio TTS URL if voice requested
+  lessonId         String?    @map("lesson_id") // lesson the learner had open when this was sent
   // --- analytics (assistant messages only; null on older rows) ---
   outcome          String? // answered | no_material | vague_fallback | provider_failed | dev_fallback
   provider         String? // gemini | deepseek

@@ -97,9 +97,9 @@ export class ChatService {
     });
 
     // 3. Create Automated Opening Message
-    const openingContent = focusObjectiveLabel
+    const openingContent = scope === 'objective' && focusObjectiveLabel
       ? `Hai! Aku Study Coach-mu. Kita lagi di materi "${focusObjectiveLabel}". Mau bahas bagian yang mana, atau ada yang bikin bingung?`
-      : 'Hai! Aku Study Coach-mu. Ada materi atau konsep yang mau kita bahas?';
+      : 'Hai! Aku Study Coach-mu. Mau tanya soal materi, tugas, jadwal, atau nilaimu? Tanya aja.';
 
     await prisma.chatMessage.create({
       data: {
@@ -130,7 +130,8 @@ export class ChatService {
     isAssessmentActive = false,
     voiceRequested = false,
     baseUrl?: string,
-    clientContext?: string
+    clientContext?: string,
+    lessonId?: string
   ) {
     const startedAt = Date.now();
     const session = await prisma.chatSession.findUnique({
@@ -154,6 +155,10 @@ export class ChatService {
       throw err;
     }
 
+    // The lesson in play: the one open when this message was sent (a continuous conversation follows
+    // the learner from lesson to lesson), else whatever the session itself was scoped to.
+    const activeObjectiveIds = lessonId ? [lessonId] : session.scope === 'objective' ? session.objectiveIds : [];
+
     let tokensUsed = 0;
 
     // Recent turns, read before saving this message. Without them a follow-up such as
@@ -173,6 +178,7 @@ export class ChatService {
         sender: ChatSender.user,
         content: userMessage,
         sourceContentIds: [],
+        lessonId: lessonId ?? null,
       },
     });
 
@@ -190,9 +196,9 @@ export class ChatService {
 
     // A session scoped to specific objectives only searches the material of those lessons.
     let scopedContentIds: string[] | undefined;
-    if (session.scope === 'objective' && session.objectiveIds.length > 0) {
+    if (activeObjectiveIds.length > 0) {
       const scopedItems = await prisma.contentItem.findMany({
-        where: { tenantId, objectiveIds: { hasSome: session.objectiveIds } },
+        where: { tenantId, objectiveIds: { hasSome: activeObjectiveIds } },
         select: { id: true },
       });
       // No indexed material for the chosen objective: search everything rather than nothing.
@@ -265,8 +271,8 @@ export class ChatService {
           },
         };
 
-        if (session.scope === 'objective' && session.objectiveIds.length > 0) {
-          unansweredWhere.objectiveIds = { hasSome: session.objectiveIds };
+        if (activeObjectiveIds.length > 0) {
+          unansweredWhere.objectiveIds = { hasSome: activeObjectiveIds };
         }
 
         const unansweredItems = await prisma.assessmentItem.findMany({
@@ -297,7 +303,7 @@ export class ChatService {
     let providerUsed: 'gemini' | 'deepseek' | null = null;
 
     const learnerContext = this.hasAnyProvider()
-      ? await this.buildLearnerContext(tenantId, session.learnerId, session.objectiveIds)
+      ? await this.buildLearnerContext(tenantId, session.learnerId, activeObjectiveIds)
       : '';
     // Schedule, assignments and quiz scores pulled from the LMS; plus anything the connector sends.
     const lmsContext = this.hasAnyProvider()
@@ -307,10 +313,10 @@ export class ChatService {
     // Name of the lesson the session is scoped to, so "ini materi apa?" is answerable even when
     // no passage matched.
     let lessonLabel: string | undefined;
-    if (session.scope === 'objective' && session.objectiveIds.length > 0) {
+    if (activeObjectiveIds.length > 0) {
       lessonLabel = (
         await prisma.learningObjective.findFirst({
-          where: { tenantId, id: { in: session.objectiveIds } },
+          where: { tenantId, id: { in: activeObjectiveIds } },
           select: { label: true },
         })
       )?.label;
@@ -441,6 +447,7 @@ ${userMessage}`;
         content: assistantReply,
         sourceContentIds,
         audioUrl: finalAudioUrl,
+        lessonId: lessonId ?? null,
         outcome,
         provider: providerUsed,
         tokensUsed,
@@ -451,6 +458,8 @@ ${userMessage}`;
         guardrail: guardrailTrigger === 'none' ? null : guardrailTrigger,
       },
     });
+
+    await prisma.chatSession.update({ where: { id: session.id }, data: { updatedAt: new Date() } });
 
     return {
       message_id: assistantMsg.id,
@@ -594,15 +603,48 @@ ${userMessage}`;
   }
 
   /**
+   * The learner's one continuous conversation: their most recently active session if it was used
+   * within `maxAgeDays`, else a new one. `fresh` forces a new conversation ("Percakapan baru").
+   * Only sessions of the whole-learner kind are resumed - the lesson comes with each message.
+   */
+  async resumeOrCreateSession(
+    tenantId: string,
+    learnerIdOrRef: string,
+    opts: { fresh?: boolean; maxAgeDays?: number } = {}
+  ) {
+    const learner = await prisma.learner.findFirst({
+      where: { tenantId, OR: [{ id: learnerIdOrRef }, { externalRef: learnerIdOrRef }] },
+    });
+    if (!learner) throw new Error(`Learner '${learnerIdOrRef}' not found`);
+
+    if (!opts.fresh) {
+      const cutoff = new Date(Date.now() - (opts.maxAgeDays ?? 30) * 86_400_000);
+      const existing = await prisma.chatSession.findFirst({
+        where: { tenantId, learnerId: learner.id, scope: ChatScope.learner, updatedAt: { gte: cutoff } },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (existing) {
+        const history = await this.getSession(tenantId, existing.id, 40);
+        return { session_id: existing.id, resumed: true, messages: history?.messages ?? [] };
+      }
+    }
+
+    const created = await this.createSession(tenantId, learner.externalRef, ChatScope.learner, []);
+    const history = await this.getSession(tenantId, created.session_id, 40);
+    return { session_id: created.session_id, resumed: false, messages: history?.messages ?? [] };
+  }
+
+  /**
    * Get session details and message history
    */
-  async getSession(tenantId: string, sessionId: string) {
+  async getSession(tenantId: string, sessionId: string, limit?: number) {
     const session = await prisma.chatSession.findUnique({
       where: { id: sessionId },
       include: {
         learner: true,
         messages: {
-          orderBy: { createdAt: 'asc' },
+          orderBy: { createdAt: limit ? 'desc' : 'asc' },
+          ...(limit ? { take: limit } : {}),
         },
       },
     });
@@ -610,6 +652,9 @@ ${userMessage}`;
     if (!session || session.tenantId !== tenantId) {
       return null;
     }
+
+    // With a limit the newest N were fetched; show them oldest-first.
+    if (limit) session.messages.reverse();
 
     return {
       session_id: session.id,
@@ -622,6 +667,7 @@ ${userMessage}`;
         sender: m.sender,
         content: m.content,
         source_content_ids: m.sourceContentIds,
+        lesson_id: m.lessonId,
         audio_url: m.audioUrl,
         created_at: m.createdAt.toISOString(),
       })),

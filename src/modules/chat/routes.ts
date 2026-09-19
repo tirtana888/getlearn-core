@@ -10,12 +10,20 @@ const CreateSessionSchema = z.object({
   objective_ids: z.array(z.string()).default([]),
 });
 
+const ResumeSessionSchema = z.object({
+  learner_id: z.string().min(1),
+  fresh: z.boolean().default(false),
+  max_age_days: z.number().int().min(1).max(365).default(30),
+});
+
 const SendMessageSchema = z.object({
   message: z.string().min(1),
   is_assessment_active: z.boolean().default(false),
   // Facts the LMS connector knows about this learner right now that getlearn does not store
   // (drip schedule, deadlines, assignments...). Plain text, capped; used as background data only.
   client_context: z.string().max(4000).optional(),
+  // The lesson the learner has open right now; retrieval and scores follow it.
+  lesson_id: z.string().min(1).max(300).optional(),
 });
 
 export async function chatRoutes(app: FastifyInstance) {
@@ -53,6 +61,31 @@ export async function chatRoutes(app: FastifyInstance) {
     }
   });
 
+  // POST /v1/chat/sessions/resume - the learner's continuous conversation (or a fresh one).
+  // Returns the session and its recent messages, oldest first.
+  app.post('/v1/chat/sessions/resume', async (req, reply) => {
+    const parseResult = ResumeSessionSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_PAYLOAD',
+          message: 'Validation failed',
+          details: parseResult.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`),
+        },
+      });
+    }
+    const { learner_id, fresh, max_age_days } = parseResult.data;
+    try {
+      const result = await chatService.resumeOrCreateSession(req.tenantId, learner_id, {
+        fresh,
+        maxAgeDays: max_age_days,
+      });
+      return reply.status(200).send(result);
+    } catch (err: any) {
+      return reply.status(404).send({ error: { code: 'RESOURCE_NOT_FOUND', message: err.message } });
+    }
+  });
+
   // POST /v1/chat/sessions/:id/messages
   app.post('/v1/chat/sessions/:id/messages', async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -70,7 +103,7 @@ export async function chatRoutes(app: FastifyInstance) {
       });
     }
 
-    const { message, is_assessment_active, client_context } = parseResult.data;
+    const { message, is_assessment_active, client_context, lesson_id } = parseResult.data;
 
     // Pre-flight check: reject immediately with HTTP 402 if tenant balance is depleted
     if (req.tenant.tokenBalance <= 0) {
@@ -94,7 +127,8 @@ export async function chatRoutes(app: FastifyInstance) {
         is_assessment_active,
         voiceRequested,
         baseUrl,
-        client_context
+        client_context,
+        lesson_id
       );
       return reply.status(200).send(response);
     } catch (err: any) {
@@ -118,7 +152,8 @@ export async function chatRoutes(app: FastifyInstance) {
   // GET /v1/chat/sessions/:id
   app.get('/v1/chat/sessions/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const session = await chatService.getSession(req.tenantId, id);
+    const limit = Number((req.query as { limit?: string }).limit) || undefined;
+    const session = await chatService.getSession(req.tenantId, id, limit && limit > 0 ? Math.min(limit, 200) : undefined);
 
     if (!session) {
       return reply.status(404).send({

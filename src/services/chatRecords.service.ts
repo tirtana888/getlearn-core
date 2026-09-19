@@ -70,10 +70,10 @@ export class ChatRecordsService {
           ...(f.before ? { lt: f.before } : {}),
         },
         ...(f.outcome ? { outcome: f.outcome } : {}),
+        ...(f.lessonId ? { OR: [{ lessonId: f.lessonId }, { lessonId: null, session: { objectiveIds: { has: f.lessonId } } }] } : {}),
         session: {
           tenantId,
           ...(f.learnerRef ? { learner: { externalRef: f.learnerRef } } : {}),
-          ...(f.lessonId ? { objectiveIds: { has: f.lessonId } } : {}),
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -96,7 +96,8 @@ export class ChatRecordsService {
 
     const lessonIds = new Set<string>();
     for (const a of assistants) {
-      if (a.session.objectiveIds[0]) lessonIds.add(a.session.objectiveIds[0]);
+      const own = a.lessonId ?? a.session.objectiveIds[0];
+      if (own) lessonIds.add(own);
       a.sourceContentIds.forEach((id) => lessonIds.add(id));
     }
     const labels = new Map(
@@ -107,7 +108,7 @@ export class ChatRecordsService {
     for (const a of assistants) {
       const question = [...(bySession.get(a.sessionId) ?? [])].reverse().find((m) => m.createdAt <= a.createdAt);
       if (!question) continue;
-      const lessonId = a.session.objectiveIds[0] ?? null;
+      const lessonId = a.lessonId ?? a.session.objectiveIds[0] ?? null;
       records.push({
         message_id: a.id,
         session_id: a.sessionId,
@@ -170,10 +171,10 @@ export class ChatRecordsService {
         FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
         WHERE s.tenant_id = ${tenantId} AND m.sender = 'assistant' AND m.created_at >= ${since}`),
       q(Prisma.sql`
-        SELECT s.objective_ids[1] AS lesson_id, COUNT(DISTINCT s.id)::int AS sessions,
+        SELECT COALESCE(m.lesson_id, s.objective_ids[1]) AS lesson_id, COUNT(DISTINCT s.id)::int AS sessions,
                COUNT(*) FILTER (WHERE m.sender = 'user')::int AS questions
         FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
-        WHERE s.tenant_id = ${tenantId} AND m.created_at >= ${since} AND s.objective_ids[1] IS NOT NULL
+        WHERE s.tenant_id = ${tenantId} AND m.created_at >= ${since} AND COALESCE(m.lesson_id, s.objective_ids[1]) IS NOT NULL
         GROUP BY 1 ORDER BY 3 DESC LIMIT 10`),
     ]);
 
