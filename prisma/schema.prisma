@@ -20,6 +20,7 @@ model Tenant {
   assessmentItems  AssessmentItem[]
   assessmentEvents AssessmentEvent[]
   masteryRecords   MasteryRecord[]
+  lessonProgress   LessonProgress[]
   contentChunks    ContentChunk[]
   chatSessions     ChatSession[]
   frappeConnection FrappeConnection?
@@ -31,16 +32,17 @@ model Tenant {
 // getlearn.ai calls OUT to the Frappe site's own REST API on a schedule -
 // nothing is pushed from the Frappe side for this. See FrappeSyncService.
 model FrappeConnection {
-  id            String    @id @default(uuid())
-  tenantId      String    @unique @map("tenant_id")
-  baseUrl       String    @map("base_url")
-  apiKey        String    @map("api_key")
-  apiSecret     String    @map("api_secret")
-  enabled       Boolean   @default(true)
-  lastSyncedAt  DateTime? @map("last_synced_at")
-  lastSyncError String?   @map("last_sync_error") @db.Text
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id                   String    @id @default(uuid())
+  tenantId             String    @unique @map("tenant_id")
+  baseUrl              String    @map("base_url")
+  apiKey               String    @map("api_key")
+  apiSecret            String    @map("api_secret")
+  enabled              Boolean   @default(true)
+  lastSyncedAt         DateTime? @map("last_synced_at")
+  lastProgressSyncedAt DateTime? @map("last_progress_synced_at")
+  lastSyncError        String?   @map("last_sync_error") @db.Text
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -57,6 +59,7 @@ model Learner {
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assessmentEvents AssessmentEvent[]
   masteryRecords   MasteryRecord[]
+  lessonProgress   LessonProgress[]
   chatSessions     ChatSession[]
 
   @@unique([tenantId, externalRef])
@@ -72,8 +75,9 @@ model LearningObjective {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   masteryRecords MasteryRecord[]
+  lessonProgress LessonProgress[]
 
   @@unique([tenantId, id])
   @@index([tenantId])
@@ -202,14 +206,14 @@ enum ChatSender {
 }
 
 model ChatSession {
-  id           String      @id @default(uuid())
-  tenantId     String      @map("tenant_id")
-  learnerId    String      @map("learner_id")
+  id           String    @id @default(uuid())
+  tenantId     String    @map("tenant_id")
+  learnerId    String    @map("learner_id")
   scope        ChatScope
-  objectiveIds String[]    @map("objective_ids") // For objective-scoped sessions
+  objectiveIds String[]  @map("objective_ids") // For objective-scoped sessions
   title        String?
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
   tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   learner  Learner       @relation(fields: [learnerId], references: [id], onDelete: Cascade)
@@ -232,4 +236,32 @@ model ChatMessage {
 
   @@index([sessionId])
   @@map("chat_messages")
+}
+
+enum ProgressStatus {
+  complete
+  partial
+}
+
+// How far a learner has got through a lesson - deliberately NOT folded into
+// MasteryRecord: progress is "how much did they get through", mastery is
+// "how well did they do on the assessment". The lesson is the objective, same
+// mapping quiz results use, so both signals hang off the same LearningObjective.
+model LessonProgress {
+  id             String         @id @default(uuid())
+  tenantId       String         @map("tenant_id")
+  learnerId      String         @map("learner_id")
+  lessonId       String         @map("lesson_id") // LearningObjective.id
+  courseId       String?        @map("course_id")
+  status         ProgressStatus
+  sourceModified DateTime       @map("source_modified")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  learner   Learner           @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  objective LearningObjective @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, learnerId, lessonId])
+  @@index([tenantId, learnerId])
+  @@map("lesson_progress")
 }

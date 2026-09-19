@@ -99,6 +99,27 @@ export class MasteryService {
       orderBy: { score: 'asc' },
     });
 
+    // Lesson the learner started but hasn't finished - the most recently touched one.
+    const inProgress = await prisma.lessonProgress.findFirst({
+      where: { tenantId, learnerId, status: 'partial' },
+      include: { objective: true },
+      orderBy: { sourceModified: 'desc' },
+    });
+    const continueAction = inProgress
+      ? {
+          learner_id: learnerId,
+          action: 'continue',
+          target_id: inProgress.lessonId,
+          reason_objective_id: inProgress.lessonId,
+          explanation: `Lesson "${inProgress.objective.label}" sudah dimulai tapi belum selesai. Lanjutkan sampai tuntas.`,
+        }
+      : null;
+
+    // If no quiz evidence yet, lesson progress is the only personal signal there is.
+    if (!masteryRecords.length && continueAction) {
+      return continueAction;
+    }
+
     // If no records, recommend generic start
     if (!masteryRecords.length) {
       const firstContent = await prisma.contentItem.findFirst({
@@ -151,6 +172,11 @@ export class MasteryService {
         reason_objective_id: gap.objectiveId,
         explanation: `Skor penguasaan pada "${gap.objective.label}" adalah ${(gap.score * 100).toFixed(0)}% (di bawah batas 70%). Dianjurkan mengulang materi review.${excerpt ? ` Rekomendasi bagian materi: "${excerpt.slice(0, 120)}..."` : ''}`,
       };
+    }
+
+    // No quiz gap to fix first, so unfinished lesson work comes before more practice.
+    if (continueAction) {
+      return continueAction;
     }
 
     // 3. All current objectives mastered >= 70%: recommend practice on next assessment

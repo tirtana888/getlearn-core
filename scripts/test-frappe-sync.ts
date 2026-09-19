@@ -1,5 +1,6 @@
 import { prisma } from '../src/lib/prisma.js';
 import { frappeSyncService } from '../src/services/frappeSync.service.js';
+import { masteryService } from '../src/services/mastery.service.js';
 
 /**
  * Unit test for the Frappe pull-sync path — mocks a Frappe site's REST API
@@ -61,7 +62,17 @@ async function main() {
     { member: fakeSubmission.member }, // duplicate (2nd course enrollment) - must be deduped
   ];
 
+  // Lesson progress: one finished, one in progress, one "Incomplete" (must be ignored).
+  const progressLessonId = 'lesson-progress-only';
+  const progressModified = new Date().toISOString();
+  const fakeProgress = [
+    { member: 'siswa.lain1@nusadayaacademy.com', lesson: progressLessonId, course: 'course-fo', status: 'Complete', modified: progressModified },
+    { member: 'siswa.lain2@nusadayaacademy.com', lesson: progressLessonId, course: 'course-fo', status: 'Partially Complete', modified: progressModified },
+    { member: 'siswa.lain2@nusadayaacademy.com', lesson: 'lesson-never-started', course: 'course-fo', status: 'Incomplete', modified: progressModified },
+  ];
+
   const realFetch = global.fetch;
+  let progressCalled = false;
   let listCalled = false;
   let detailCalled = false;
   let quizCalled = false;
@@ -76,6 +87,16 @@ async function main() {
     }
 
     const decoded = decodeURIComponent(url);
+
+    if (decoded.includes('/api/resource/LMS Course Progress?')) {
+      progressCalled = true;
+      console.log(`[mock fetch:progress] -> ${fakeProgress.length} row(s)`);
+      return new Response(JSON.stringify({ data: fakeProgress }), { status: 200 });
+    }
+
+    if (decoded.includes(`/api/resource/Course Lesson/${progressLessonId}`)) {
+      return new Response(JSON.stringify({ data: { name: progressLessonId, title: 'Lesson Tanpa Quiz' } }), { status: 200 });
+    }
 
     if (decoded.includes('/api/resource/LMS Enrollment?')) {
       enrollmentCalled = true;
@@ -151,7 +172,23 @@ async function main() {
       where: { tenantId_externalRef: { tenantId, externalRef: frappeSyncService.anonymizeLearnerId('siswa.lain2@nusadayaacademy.com') } },
     });
 
+    const progressRows = await prisma.lessonProgress.findMany({ where: { tenantId, lessonId: progressLessonId } });
+    const progressObjective = await prisma.learningObjective.findUnique({
+      where: { tenantId_id: { tenantId, id: progressLessonId } },
+    });
+    const incompleteRow = await prisma.lessonProgress.findFirst({ where: { tenantId, lessonId: 'lesson-never-started' } });
+    const doneRow = progressRows.find((r) => r.learnerId === noQuizLearner1?.id);
+    const partialRow = progressRows.find((r) => r.learnerId === noQuizLearner2?.id);
+    const partialAction = noQuizLearner2 ? await masteryService.getNextAction(tenantId, noQuizLearner2.id) : null;
+
     const checks = [
+      { name: 'progress endpoint called', pass: progressCalled },
+      { name: 'result.progressRecords === 2 (Incomplete ignored)', pass: result.progressRecords === 2 },
+      { name: 'Complete -> status complete', pass: doneRow?.status === 'complete' },
+      { name: 'Partially Complete -> status partial', pass: partialRow?.status === 'partial' },
+      { name: 'Incomplete row not stored', pass: !incompleteRow },
+      { name: 'progress lesson registered as objective with its real title', pass: progressObjective?.label === 'Lesson Tanpa Quiz' },
+      { name: 'learner with no quiz but an unfinished lesson gets a "continue" recommendation', pass: partialAction?.action === 'continue' && partialAction?.target_id === progressLessonId },
       { name: 'enrollment endpoint called', pass: enrollmentCalled },
       { name: 'result.learnersRegistered === 3 (deduped from 4 rows)', pass: result.learnersRegistered === 3 },
       { name: 'student with zero quiz activity still registered as a learner', pass: Boolean(noQuizLearner1) && Boolean(noQuizLearner2) },
@@ -189,6 +226,9 @@ async function main() {
     const idempotentOnRerun = secondResult.submissionsSeen === 0;
     console.log(`  [${idempotentOnRerun ? 'PASS' : 'FAIL'}] second run sees no submissions (watermark prevents re-fetch)`);
     if (!idempotentOnRerun) allPass = false;
+    const progressAfterRerun = await prisma.lessonProgress.count({ where: { tenantId, lessonId: progressLessonId } });
+    console.log(`  [${progressAfterRerun === 2 ? 'PASS' : 'FAIL'}] progress rows not duplicated by the overlapping re-read (${progressAfterRerun})`);
+    if (progressAfterRerun !== 2) allPass = false;
 
     console.log(
       '\n[4] Backfill scenario: simulate an event ingested by pre-lesson-mapping code ' +
@@ -228,6 +268,8 @@ async function main() {
     console.log('\n>>> All checks passed <<<');
   } finally {
     global.fetch = realFetch;
+    await prisma.lessonProgress.deleteMany({ where: { tenantId, lessonId: progressLessonId } });
+    await prisma.learningObjective.deleteMany({ where: { tenantId, id: progressLessonId } });
     await prisma.assessmentEvent.deleteMany({ where: { tenantId, id: { startsWith: 'frappe_qr_' } } });
     await prisma.masteryRecord.deleteMany({ where: { tenantId, objectiveId: fakeLesson.name } });
     await prisma.assessmentItem.deleteMany({ where: { tenantId, id: { in: ['q_front_office_01', 'q_housekeeping_01'] } } });

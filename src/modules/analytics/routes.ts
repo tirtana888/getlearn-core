@@ -8,7 +8,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
   app.get('/v1/analytics/overview', async (req, reply) => {
     const tenantId = req.tenantId;
 
-    const [tenant, learnerCount, objectiveCount, eventCount, masteryRecords] = await Promise.all([
+    const [tenant, learnerCount, objectiveCount, eventCount, masteryRecords, progressGroups] = await Promise.all([
       prisma.tenant.findUnique({ where: { id: tenantId } }),
       prisma.learner.count({ where: { tenantId } }),
       prisma.learningObjective.count({ where: { tenantId } }),
@@ -17,6 +17,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
         where: { tenantId },
         include: { objective: true },
       }),
+      prisma.lessonProgress.groupBy({ by: ['status'], where: { tenantId }, _count: { _all: true } }),
     ]);
 
     const totalRecords = masteryRecords.length;
@@ -58,6 +59,8 @@ export async function analyticsRoutes(app: FastifyInstance) {
         average_mastery_score: Math.round(avgScore * 1000) / 1000,
         active_gap_count: gaps.length,
         gap_percentage: totalRecords > 0 ? Math.round((gaps.length / totalRecords) * 100) : 0,
+        lessons_complete: progressGroups.find((g) => g.status === 'complete')?._count._all ?? 0,
+        lessons_partial: progressGroups.find((g) => g.status === 'partial')?._count._all ?? 0,
       },
       objective_distribution: objectiveDistribution,
     };

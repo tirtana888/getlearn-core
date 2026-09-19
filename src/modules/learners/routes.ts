@@ -24,6 +24,7 @@ export async function learnerRoutes(app: FastifyInstance) {
         masteryRecords: {
           include: { objective: true },
         },
+        lessonProgress: { select: { status: true } },
         _count: {
           select: { assessmentEvents: true, chatSessions: true },
         },
@@ -49,6 +50,8 @@ export async function learnerRoutes(app: FastifyInstance) {
           mastery_record_count: total,
           avg_mastery_score: avgScore !== null ? Math.round(avgScore * 1000) / 1000 : null,
           gap_count: gapCount,
+          lessons_complete: l.lessonProgress.filter((p) => p.status === 'complete').length,
+          lessons_partial: l.lessonProgress.filter((p) => p.status === 'partial').length,
         };
       }),
     };
@@ -130,6 +133,41 @@ export async function learnerRoutes(app: FastifyInstance) {
         confidence: r.evidenceCount >= 5 ? 'high' : r.evidenceCount >= 2 ? 'medium' : 'low',
         is_gap: true,
         updated_at: r.updatedAt.toISOString(),
+      })),
+    });
+  });
+
+
+  // GET /v1/learners/:id/progress - lesson-level progress, separate from quiz mastery
+  app.get('/v1/learners/:id/progress', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const learner = await resolveLearner(req.tenantId, id);
+
+    if (!learner) {
+      return reply.status(404).send({
+        error: {
+          code: 'LEARNER_NOT_FOUND',
+          message: `Learner with ID '${id}' not found in this tenant.`,
+        },
+      });
+    }
+
+    const rows = await prisma.lessonProgress.findMany({
+      where: { tenantId: req.tenantId, learnerId: learner.id },
+      include: { objective: true },
+      orderBy: { sourceModified: 'desc' },
+    });
+
+    return reply.status(200).send({
+      learner_id: learner.externalRef,
+      lessons_complete: rows.filter((r) => r.status === 'complete').length,
+      lessons_partial: rows.filter((r) => r.status === 'partial').length,
+      lessons: rows.map((r) => ({
+        lesson_id: r.lessonId,
+        label: r.objective.label,
+        course_id: r.courseId,
+        status: r.status,
+        updated_at: r.sourceModified.toISOString(),
       })),
     });
   });

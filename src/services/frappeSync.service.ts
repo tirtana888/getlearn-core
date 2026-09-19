@@ -34,7 +34,16 @@ interface FrappeEnrollmentRow {
   member: string;
 }
 
+interface FrappeProgressRow {
+  member: string;
+  lesson: string;
+  course: string | null;
+  status: string;
+  modified: string;
+}
+
 export interface SyncResult {
+  progressRecords: number;
   learnersRegistered: number;
   submissionsSeen: number;
   eventsIngested: number;
@@ -64,11 +73,11 @@ export class FrappeSyncService {
   async syncTenant(tenantId: string): Promise<SyncResult> {
     const connection = await prisma.frappeConnection.findUnique({ where: { tenantId } });
     if (!connection || !connection.enabled) {
-      return { learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
+      return { progressRecords: 0, learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
     }
 
     const since = connection.lastSyncedAt ?? new Date(0);
-    const result: SyncResult = { learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
+    const result: SyncResult = { progressRecords: 0, learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
     let latestCreation = since;
 
     // Register every enrolled student up front, not just whoever happens to have a quiz
@@ -80,6 +89,19 @@ export class FrappeSyncService {
     } catch (err: any) {
       result.errors++;
       await this.recordError(tenantId, `student roster pull failed: ${err.message || err}`);
+    }
+
+    try {
+      result.progressRecords = await this.syncLessonProgress(
+        tenantId,
+        connection.baseUrl,
+        connection.apiKey,
+        connection.apiSecret,
+        connection.lastProgressSyncedAt
+      );
+    } catch (err: any) {
+      result.errors++;
+      await this.recordError(tenantId, `lesson progress pull failed: ${err.message || err}`);
     }
 
     // Lesson-as-objective is the level of granularity we ship with: quiz.lesson
@@ -179,6 +201,95 @@ export class FrappeSyncService {
     }
 
     return result;
+  }
+
+  /**
+   * Pulls LMS Course Progress rows changed since the last progress watermark and upserts
+   * one LessonProgress per (learner, lesson). Keyed on `modified`, not `creation`, because
+   * a row flips Partially Complete -> Complete in place. The lesson becomes a
+   * LearningObjective (same id the quiz mapping uses), so progress and quiz mastery for
+   * a lesson line up on the same objective. A small overlap is re-read on purpose: the
+   * upserts are idempotent, and it avoids missing rows that share the watermark instant.
+   */
+  private async syncLessonProgress(
+    tenantId: string,
+    baseUrl: string,
+    apiKey: string,
+    apiSecret: string,
+    watermark: Date | null
+  ): Promise<number> {
+    const since = watermark ? new Date(watermark.getTime() - 60_000) : new Date(0);
+    const filters = encodeURIComponent(JSON.stringify([['modified', '>', since.toISOString()]]));
+    const fields = encodeURIComponent(JSON.stringify(['member', 'lesson', 'course', 'status', 'modified']));
+    const orderBy = encodeURIComponent('modified asc');
+    const url =
+      `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent('LMS Course Progress')}` +
+      `?filters=${filters}&fields=${fields}&limit_page_length=0&order_by=${orderBy}`;
+
+    const res = await fetch(url, { headers: { Authorization: this.authHeader(apiKey, apiSecret) } });
+    if (!res.ok) {
+      throw new Error(`Frappe API error ${res.status} listing LMS Course Progress: ${await res.text()}`);
+    }
+    const data: any = await res.json();
+    const rows: FrappeProgressRow[] = data.data || [];
+
+    const lessonTitleCache = new Map<string, string>();
+    let latest = watermark ?? new Date(0);
+    let processed = 0;
+
+    for (const row of rows) {
+      if (!row.member || !row.lesson) continue;
+      // "Incomplete" carries no signal beyond "not started", which is the absence of a row.
+      const status = row.status === 'Complete' ? 'complete' : row.status === 'Partially Complete' ? 'partial' : null;
+      if (!status) continue;
+
+      let title = lessonTitleCache.get(row.lesson);
+      if (title === undefined) {
+        try {
+          const lesson = await this.fetchDoc<FrappeLessonDoc>(baseUrl, apiKey, apiSecret, 'Course Lesson', row.lesson);
+          title = lesson.title || lesson.name;
+        } catch {
+          title = row.lesson;
+        }
+        lessonTitleCache.set(row.lesson, title);
+      }
+
+      await prisma.learningObjective.upsert({
+        where: { tenantId_id: { tenantId, id: row.lesson } },
+        update: { label: title },
+        create: { tenantId, id: row.lesson, label: title },
+      });
+
+      const learner = await prisma.learner.upsert({
+        where: { tenantId_externalRef: { tenantId, externalRef: this.anonymizeLearnerId(row.member) } },
+        update: {},
+        create: { tenantId, externalRef: this.anonymizeLearnerId(row.member) },
+      });
+
+      const modified = new Date(row.modified);
+      await prisma.lessonProgress.upsert({
+        where: { tenantId_learnerId_lessonId: { tenantId, learnerId: learner.id, lessonId: row.lesson } },
+        update: { status, courseId: row.course, sourceModified: modified },
+        create: {
+          tenantId,
+          learnerId: learner.id,
+          lessonId: row.lesson,
+          courseId: row.course,
+          status,
+          sourceModified: modified,
+        },
+      });
+
+      if (modified > latest) latest = modified;
+      processed++;
+    }
+
+    await prisma.frappeConnection.update({
+      where: { tenantId },
+      data: { lastProgressSyncedAt: latest },
+    });
+
+    return processed;
   }
 
   /**
