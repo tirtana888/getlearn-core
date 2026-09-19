@@ -16,13 +16,16 @@ import { ChatScope, ChatSender } from '@prisma/client';
  */
 export const CHAT_SIMILARITY_THRESHOLD = 0.6;
 
+/** Bar for retrieval restricted to a single lesson's own material. */
+export const LESSON_SCOPED_SIMILARITY_THRESHOLD = 0.5;
+
 /**
  * Questions about the lesson as a whole ("ini materi tentang apa?", "rangkum lesson ini").
  * They resemble no single passage, so similarity search finds nothing and the coach would
  * refuse a perfectly answerable question.
  */
 export const OVERVIEW_QUESTION_RE =
-  /(tentang apa|apa isi|isi (materi|lesson|pelajaran|modul)|membahas apa|belajar apa|rangkum|ringkas|ringkasan|overview|garis besar|inti (dari )?(materi|lesson|bab))|(materi|lesson|pelajaran|bab|modul|topik).{0,25}(apa|tentang|isi|bahas)/i;
+  /\b(tentang apa|apa isi|isi (materi|lesson|pelajaran|modul)|membahas apa|belajar apa|rangkum|ringkas|ringkasan|overview|garis besar|inti (dari )?(materi|lesson|bab))\b|(materi|lesson|pelajaran|bab|modul|topik).{0,25}\b(apa|tentang|isi|bahas)\b/i;
 
 export class ChatService {
   private ai: GoogleGenAI | null = null;
@@ -194,6 +197,12 @@ export class ChatService {
 
     // A follow-up stays on the lesson(s) the coach just answered from: "contohnya?" means examples
     // of that topic, not of whatever lesson happens to mention examples the most.
+    // Inside one lesson the candidate set is small and all on-topic, so a lower bar is safe (the
+    // guardrail prompt still makes the model say so when the answer is not in the material).
+    // Across the whole tenant a vague message drifts to unrelated lessons, so the bar stays high.
+    const searchThreshold = scopedContentIds
+      ? Math.min(activeThreshold, LESSON_SCOPED_SIMILARITY_THRESHOLD)
+      : activeThreshold;
     let retrievedChunks: Awaited<ReturnType<typeof ragService.searchSimilarChunks>> = [];
     const lastSources = isShortFollowUp
       ? [...history].reverse().find((m) => m.sender === ChatSender.assistant && m.sourceContentIds.length > 0)
@@ -202,7 +211,7 @@ export class ChatService {
     if (lastSources && lastSources.length > 0) {
       const allowed = scopedContentIds ? lastSources.filter((id) => scopedContentIds!.includes(id)) : lastSources;
       if (allowed.length > 0) {
-        retrievedChunks = await ragService.searchSimilarChunks(tenantId, retrievalQuery, 4, activeThreshold, allowed);
+        retrievedChunks = await ragService.searchSimilarChunks(tenantId, retrievalQuery, 4, searchThreshold, allowed);
       }
     }
     if (retrievedChunks.length === 0) {
@@ -210,13 +219,16 @@ export class ChatService {
         tenantId,
         retrievalQuery,
         4,
-        activeThreshold,
+        searchThreshold,
         scopedContentIds
       );
     }
     // Lesson-scoped session + a question about the lesson itself: answer from its opening
     // material instead of refusing for lack of a similar passage.
-    if (retrievedChunks.length === 0 && scopedContentIds && OVERVIEW_QUESTION_RE.test(userMessage)) {
+    // A message of a few words ("gimana", "lanjut") names no topic either; in a lesson-scoped
+    // session the lesson itself is the topic.
+    const isVague = userMessage.trim().split(/\s+/).length <= 3;
+    if (retrievedChunks.length === 0 && scopedContentIds && (OVERVIEW_QUESTION_RE.test(userMessage) || isVague)) {
       retrievedChunks = await ragService.getLeadingChunks(tenantId, scopedContentIds, 4);
     }
 
