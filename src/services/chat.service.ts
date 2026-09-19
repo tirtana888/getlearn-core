@@ -255,62 +255,67 @@ export class ChatService {
     let assistantReply = '';
     let finalAudioUrl: string | null = null;
 
-    if (this.ai && contextText.trim()) {
-      try {
-        const systemPrompt = `Anda adalah AI Study Coach getlearn.ai yang ramah, mendidik, dan membimbing.
+    let providerUsed: 'gemini' | 'deepseek' | null = null;
+
+    if (this.hasAnyProvider() && contextText.trim()) {
+      const systemPrompt = `Anda adalah AI Study Coach getlearn.ai yang ramah, mendidik, dan membimbing.
 ATURAN GUARDRAIL KETAT:
 1. Wajib menjawab HANYA berdasarkan materi pelajaran yang diberikan di bawah.
 2. Jika informasi tidak ada di dalam materi pelajaran, katakan secara jujur dan sopan: "Materi ini belum tercakup dalam modul pelajaran Anda." JANGAN mengarang jawaban dari pengetahuan umum.
 3. ${
-          effectiveAssessmentActive
-            ? 'PERINGATAN: Siswa sedang mengerjakan soal/asesmen aktif! JANGAN PERNAH berikan jawaban langsung/final. Gunakan metode Socratic: berikan hint, pertanyaan pengarah, atau tunjukkan rumus/konsep yang relevan agar siswa berpikir sendiri.'
-            : 'Jelaskan konsep dengan jelas, bertahap, dan mudah dimengerti.'
-        }
+        effectiveAssessmentActive
+          ? 'PERINGATAN: Siswa sedang mengerjakan soal/asesmen aktif! JANGAN PERNAH berikan jawaban langsung/final. Gunakan metode Socratic: berikan hint, pertanyaan pengarah, atau tunjukkan rumus/konsep yang relevan agar siswa berpikir sendiri.'
+          : 'Jelaskan konsep dengan jelas, bertahap, dan mudah dimengerti.'
+      }
 4. Jawab dalam Bahasa Indonesia yang santun dan menyemangati.`;
 
-        const transcript = history
-          .map((m) => `${m.sender === ChatSender.user ? 'SISWA' : 'COACH'}: ${m.content.slice(0, 600)}`)
-          .join('\n');
+      const transcript = history
+        .map((m) => `${m.sender === ChatSender.user ? 'SISWA' : 'COACH'}: ${m.content.slice(0, 600)}`)
+        .join('\n');
 
-        const prompt = `MATERI PELAJARAN:
+      const prompt = `MATERI PELAJARAN:
 ${contextText}
 ${transcript ? `\nRIWAYAT PERCAKAPAN (untuk memahami konteks pertanyaan lanjutan):\n${transcript}\n` : ''}
 PERTANYAAN SISWA:
 ${userMessage}`;
 
-        // Bounded wait: a hung Gemini call must not hold the learner's request open indefinitely.
-        const modelRes = await Promise.race([
-          this.ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `${systemPrompt}\n\n${prompt}`,
-          }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Gemini generation timed out after 45s')), 45000)
-          ),
-        ]);
+      // Gemini first; if it fails (quota, timeout, outage) DeepSeek answers instead. Both get
+      // the identical guardrail prompt, so the fallback never loosens the tutoring rules.
+      const providers: Array<['gemini' | 'deepseek', () => Promise<{ text: string; tokens: number }>]> = [];
+      if (this.ai) providers.push(['gemini', () => this.generateWithGemini(systemPrompt, prompt)]);
+      if (process.env.DEEPSEEK_API_KEY) {
+        providers.push(['deepseek', () => this.generateWithDeepSeek(systemPrompt, prompt)]);
+      }
 
-        assistantReply = modelRes.text || '';
+      for (const [name, run] of providers) {
+        try {
+          const out = await run();
+          if (!out.text.trim()) throw new Error('empty response');
+          assistantReply = out.text;
+          providerUsed = name;
 
-        // Token usage tracking & tenant balance deduction
-        // @google/genai provides usageMetadata.totalTokenCount
-        const genTokens = modelRes.usageMetadata?.totalTokenCount 
-          ?? Math.max(1, Math.ceil((`${systemPrompt}\n\n${prompt}`.length + assistantReply.length) / 4)); // Conservative estimate if usageMetadata is absent
+          // Token usage tracking & tenant balance deduction
+          tokensUsed += out.tokens;
+          await prisma.tenant.update({
+            where: { id: tenantId },
+            data: { tokenBalance: { decrement: out.tokens } },
+          });
+          if (name !== providers[0][0]) console.warn(`[chat] answered by fallback provider '${name}'`);
+          break;
+        } catch (err: any) {
+          console.warn(`[chat] ${name} generation failed:`, err?.message || err);
+        }
+      }
 
-        tokensUsed += genTokens;
-        await prisma.tenant.update({
-          where: { id: tenantId },
-          data: { tokenBalance: { decrement: genTokens } },
-        });
-      } catch (err) {
-        console.warn('Gemini text generation failed:', err);
-        // With Gemini configured, dumping a raw chunk as "the answer" reads as an irrelevant
-        // reply, so say plainly that the coach is unavailable instead.
+      // Providers are configured but every one failed: dumping a raw chunk as "the answer"
+      // reads as an irrelevant reply, so say plainly that the coach is unavailable instead.
+      if (!assistantReply) {
         assistantReply =
           'Maaf, AI Study Coach sedang sulit dijangkau. Silakan coba kirim pertanyaanmu lagi sebentar lagi.';
       }
     }
 
-    // Fallback response if Gemini API key absent or generation failed
+    // Dev fallback: no AI provider configured at all (a configured-but-failing provider is handled above)
     if (!assistantReply) {
       if (!contextText.trim()) {
         assistantReply =
@@ -370,8 +375,65 @@ ${userMessage}`;
       audio_url: assistantMsg.audioUrl,
       voice_audio_url: assistantMsg.audioUrl, // alias for frontend / python sdk compatibility
       tokens_used: tokensUsed,
+      provider: providerUsed,
       created_at: assistantMsg.createdAt.toISOString(),
     };
+  }
+
+  private hasAnyProvider(): boolean {
+    return this.ai !== null || Boolean(process.env.DEEPSEEK_API_KEY);
+  }
+
+  private async generateWithGemini(systemPrompt: string, prompt: string): Promise<{ text: string; tokens: number }> {
+    if (!this.ai) throw new Error('Gemini is not configured');
+    const contents = `${systemPrompt}\n\n${prompt}`;
+
+    // Bounded wait: a hung call must not hold the learner's request open indefinitely.
+    const res = await Promise.race([
+      this.ai.models.generateContent({ model: 'gemini-2.5-flash', contents }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini generation timed out after 45s')), 45000)
+      ),
+    ]);
+    const text = res.text || '';
+    // usageMetadata.totalTokenCount, or a conservative ~4 chars/token estimate if absent.
+    const tokens = res.usageMetadata?.totalTokenCount ?? Math.max(1, Math.ceil((contents.length + text.length) / 4));
+    return { text, tokens };
+  }
+
+  /** DeepSeek is OpenAI-compatible; model defaults to the current `deepseek-flash`. */
+  private async generateWithDeepSeek(systemPrompt: string, prompt: string): Promise<{ text: string; tokens: number }> {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) throw new Error('DeepSeek is not configured');
+    const baseUrl = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, '');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 45000);
+    try {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: process.env.DEEPSEEK_MODEL || 'deepseek-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        throw new Error(`DeepSeek HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 300)}`);
+      }
+      const data: any = await res.json();
+      const text: string = data?.choices?.[0]?.message?.content || '';
+      const tokens: number =
+        data?.usage?.total_tokens ?? Math.max(1, Math.ceil((systemPrompt.length + prompt.length + text.length) / 4));
+      return { text, tokens };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
