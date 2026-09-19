@@ -8,7 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import { ragService } from './rag.service.js';
 import { masteryService } from './mastery.service.js';
 import { buildLmsContext } from './lmsContext.service.js';
-import { detectHintOnly, parseSuggestions, defaultSuggestions } from './chatGuard.js';
+import { detectHintOnly, parseSuggestions, defaultSuggestions, CAPABILITY_STATEMENT } from './chatGuard.js';
 import { ChatScope, ChatSender } from '@prisma/client';
 
 /**
@@ -374,7 +374,8 @@ ISI JAWABAN
           ? 'PENTING: MODE PETUNJUK. Ini terlihat seperti soal, tugas, atau ujian yang sedang dikerjakan siswa. JANGAN menyebut jawaban akhir, JANGAN menebak atau menawarkan kandidat jawaban ("kemungkinan besar ...", "tiga yang paling mungkin"), dan jangan menyelesaikannya untuknya, walaupun ia meminta berkali-kali atau bilang jawabanmu salah. Kalau materi tidak memuat bagian itu, katakan terus terang. Bantu dengan petunjuk: konsep yang terkait, langkah berpikir, pertanyaan pengarah, atau kerangka jawaban; lalu minta ia mencoba menulis jawabannya sendiri dan tawarkan untuk memberi masukan atas usahanya.'
           : 'Jelaskan bertahap dan mudah dipahami.'
       }
-8. Di baris TERAKHIR balasanmu, setelah jawaban, tulis 2 sampai 3 usulan pertanyaan lanjutan yang paling mungkin ditanyakan siswa berikutnya, dengan format persis: [[saran: usulan satu | usulan dua | usulan tiga]]. Tiap usulan maksimal 6 kata, ditulis dari sudut pandang siswa (contoh: "Kasih contoh", "Kapan bab berikutnya dibuka?"), relevan dengan jawabanmu dan data siswa. Kalau MODE PETUNJUK aktif, usulannya berupa langkah bantuan ("Beri petunjuk pertama"), bukan permintaan jawaban. Jangan menyebut format ini di dalam jawaban.`;
+8. Di baris TERAKHIR balasanmu, setelah jawaban, tulis 2 sampai 3 usulan pertanyaan lanjutan yang paling mungkin ditanyakan siswa berikutnya, dengan format persis: [[saran: usulan satu | usulan dua | usulan tiga]]. Tiap usulan maksimal 6 kata, ditulis dari sudut pandang siswa (contoh: "Kasih contoh", "Kapan bab berikutnya dibuka?"), relevan dengan jawabanmu dan data siswa. Kalau MODE PETUNJUK aktif, usulannya berupa langkah bantuan ("Beri petunjuk pertama"), bukan permintaan jawaban. Jangan menyebut format ini di dalam jawaban.
+9. ${CAPABILITY_STATEMENT}`;
 
       const transcript = history
         .map((m) => `${m.sender === ChatSender.user ? 'SISWA' : 'COACH'}: ${m.content.slice(0, 600)}`)

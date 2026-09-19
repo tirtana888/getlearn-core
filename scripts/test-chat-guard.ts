@@ -1,5 +1,5 @@
 /** Offline check of the hint-only guardrail and the follow-up suggestion parser. */
-import { detectHintOnly, isAnswerSeeking, looksLikeExamItem, parseSuggestions, defaultSuggestions } from '../src/services/chatGuard.js';
+import { detectHintOnly, isAnswerSeeking, looksLikeExamItem, parseSuggestions, defaultSuggestions, CAPABILITY_STATEMENT } from '../src/services/chatGuard.js';
 
 let failures = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -56,6 +56,18 @@ check('too short / too long suggestions are dropped', JSON.stringify(p.suggestio
 p = parseSuggestions('Jawaban.\n[[saran: Sama | Sama | Beda]]');
 check('duplicates removed', JSON.stringify(p.suggestions) === JSON.stringify(['Sama', 'Beda']));
 check('defaults differ for hint mode', defaultSuggestions({ hintMode: true })[0] !== defaultSuggestions({ hintMode: false })[0] && defaultSuggestions({ hintMode: false }).length === 3);
+
+// --- the fixed capability statement must stay accurate ---
+const cap = CAPABILITY_STATEMENT;
+for (const seen of ['progres', 'skor quiz', 'batas lulus', 'status tugas', 'jadwal bab', 'isi materi lesson', 'instruksi tugas', 'pesan terakhir']) {
+  check(`capability statement says the coach can see: ${seen}`, cap.toLowerCase().includes(seen));
+}
+for (const blind of ['isi jawaban tugas', 'komentar penilai', 'absensi', 'nilai rapor', 'data siswa lain', 'nama dan email', 'label batch']) {
+  check(`capability statement says the coach cannot see: ${blind}`, cap.toLowerCase().includes(blind));
+}
+check('capability statement admits data lag (minutes for progress, about an hour for material)', cap.includes('beberapa menit') && cap.includes('satu jam'));
+check('capability statement does not claim "bukan data pribadi" as a fact', cap.includes('Jangan bilang datanya "bukan data pribadi"') && !/(^|[^"])bukan data pribadi(?!")/.test(cap.replace('Jangan bilang datanya "bukan data pribadi"', '')));
+check('assignment deadlines are described as conditional on a schedule', cap.includes('hanya kalau tugas itu diberi jadwal'));
 
 console.log(failures === 0 ? '\nAll chat-guard checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

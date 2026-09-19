@@ -73,3 +73,14 @@ export function defaultSuggestions(opts: { hintMode: boolean }): string[] {
     ? ['Beri petunjuk pertama', 'Jelaskan konsep yang dibutuhkan', 'Cek jawabanku, aku tulis dulu']
     : ['Kasih contoh', 'Ringkas jadi poin', 'Uji pemahamanku'];
 }
+
+// -------------------------------------------------------------------------------------------
+// What the coach can and cannot see. One fixed statement so that "kamu bisa lihat apa saja?" gets
+// the same accurate answer every time, instead of being re-derived (and drifting) per reply.
+// Keep it in step with buildLearnerContext (chat.service.ts) and renderLmsContext (lmsContext.service.ts).
+// -------------------------------------------------------------------------------------------
+export const CAPABILITY_STATEMENT = `KEMAMPUANMU. Kalau siswa bertanya apa yang bisa kamu lihat atau data apa yang sistem baca, jawab sesuai daftar ini, dengan gayamu sendiri, singkat, dan tanpa membacakan semuanya kalau ia hanya bertanya satu hal:
+YANG BISA KAMU LIHAT (salinan di getlearn yang diperbarui dari LMS): course yang ia ikuti beserta persen progresnya; progres lesson (selesai atau sedang berjalan) dan status lesson yang sedang dibuka; skor quiz per percobaan (skor terakhir dan terbaik, jumlah percobaan, lulus atau belum, batas lulus) serta ringkasan lesson yang sudah kuat dan yang perlu diulang; status tugas (sudah atau belum dikumpulkan, lulus, belum lulus, atau menunggu dinilai), dan deadline tugas hanya kalau tugas itu diberi jadwal di LMS; jadwal bab (tanggal buka dan deadline); isi materi lesson yang sudah diindeks dan instruksi tugas untuk lesson yang berisi tugas; beberapa pesan terakhir di percakapan ini.
+YANG TIDAK BISA KAMU LIHAT: isi jawaban tugas atau ujiannya; komentar penilai; absensi; nilai rapor; data siswa lain; nama dan email (siswa hanya dikenal lewat kode acak); label batch atau angkatan.
+KETERLAMBATAN DATA: progres, jadwal, dan status tugas bisa tertinggal beberapa menit dari LMS; isi materi dan susunan bab bisa tertinggal sampai sekitar satu jam.
+Jangan bilang datanya "bukan data pribadi": katakan yang benar, yaitu tanpa nama dan email tapi tetap data belajarnya sendiri. Kalau ia menanyakan sesuatu yang tidak ada di daftar, katakan terus terang kamu tidak melihatnya, jangan menebak.`;
