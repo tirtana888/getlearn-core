@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { eventsService } from './events.service.js';
 import { masteryService } from './mastery.service.js';
+import { frappeCatalogService } from './frappeCatalog.service.js';
 
 interface FrappeQuizResultRow {
   name: string;
@@ -32,6 +33,8 @@ interface FrappeLessonDoc {
 
 interface FrappeEnrollmentRow {
   member: string;
+  course?: string | null;
+  progress?: number | null;
 }
 
 interface FrappeProgressRow {
@@ -43,6 +46,8 @@ interface FrappeProgressRow {
 }
 
 export interface SyncResult {
+  catalogLessons: number;
+  contentQueued: number;
   progressRecords: number;
   learnersRegistered: number;
   submissionsSeen: number;
@@ -73,12 +78,26 @@ export class FrappeSyncService {
   async syncTenant(tenantId: string): Promise<SyncResult> {
     const connection = await prisma.frappeConnection.findUnique({ where: { tenantId } });
     if (!connection || !connection.enabled) {
-      return { progressRecords: 0, learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
+      return { catalogLessons: 0, contentQueued: 0, progressRecords: 0, learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
     }
 
     const since = connection.lastSyncedAt ?? new Date(0);
-    const result: SyncResult = { progressRecords: 0, learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
+    const result: SyncResult = { catalogLessons: 0, contentQueued: 0, progressRecords: 0, learnersRegistered: 0, submissionsSeen: 0, eventsIngested: 0, errors: 0 };
     let latestCreation = since;
+
+    // Catalog first: lessons/quizzes become objectives before progress and enrollments reference them.
+    try {
+      const catalog = await frappeCatalogService.syncCatalog(tenantId, {
+        baseUrl: connection.baseUrl,
+        apiKey: connection.apiKey,
+        apiSecret: connection.apiSecret,
+      });
+      result.catalogLessons = catalog.lessons;
+      result.contentQueued = catalog.contentQueued;
+    } catch (err: any) {
+      result.errors++;
+      await this.recordError(tenantId, `catalog pull failed: ${err.message || err}`);
+    }
 
     // Register every enrolled student up front, not just whoever happens to have a quiz
     // submission - otherwise a student who's only watched lessons/SCORM never shows up
@@ -304,7 +323,7 @@ export class FrappeSyncService {
     apiSecret: string
   ): Promise<number> {
     const filters = encodeURIComponent(JSON.stringify([['member_type', '=', 'Student']]));
-    const fields = encodeURIComponent(JSON.stringify(['member']));
+    const fields = encodeURIComponent(JSON.stringify(['member', 'course', 'progress']));
     const url =
       `${baseUrl.replace(/\/$/, '')}/api/resource/${encodeURIComponent('LMS Enrollment')}` +
       `?filters=${filters}&fields=${fields}&limit_page_length=0`;
@@ -318,12 +337,39 @@ export class FrappeSyncService {
 
     const distinctMembers = new Set(rows.map((r) => r.member).filter(Boolean));
 
+    // Course titles were registered by the catalog pass (LearningObjective.courseLabel).
+    const labelled = await prisma.learningObjective.findMany({
+      where: { tenantId, courseId: { not: null } },
+      select: { courseId: true, courseLabel: true },
+      distinct: ['courseId'],
+    });
+    const courseLabel = new Map(labelled.map((o) => [o.courseId as string, o.courseLabel]));
+
+    const learnerIds = new Map<string, string>();
     for (const member of distinctMembers) {
-      const learnerId = this.anonymizeLearnerId(member);
-      await prisma.learner.upsert({
-        where: { tenantId_externalRef: { tenantId, externalRef: learnerId } },
+      const externalRef = this.anonymizeLearnerId(member);
+      const learner = await prisma.learner.upsert({
+        where: { tenantId_externalRef: { tenantId, externalRef } },
         update: {},
-        create: { tenantId, externalRef: learnerId },
+        create: { tenantId, externalRef },
+      });
+      learnerIds.set(member, learner.id);
+    }
+
+    for (const row of rows) {
+      const learnerDbId = learnerIds.get(row.member);
+      if (!learnerDbId || !row.course) continue;
+      const pct = Number(row.progress) || 0;
+      await prisma.enrollment.upsert({
+        where: { tenantId_learnerId_courseId: { tenantId, learnerId: learnerDbId, courseId: row.course } },
+        update: { progressPct: pct, courseLabel: courseLabel.get(row.course) ?? null },
+        create: {
+          tenantId,
+          learnerId: learnerDbId,
+          courseId: row.course,
+          courseLabel: courseLabel.get(row.course) ?? null,
+          progressPct: pct,
+        },
       });
     }
 

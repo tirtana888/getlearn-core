@@ -520,7 +520,12 @@
         <div class="stat-card">
           <div class="stat-label">Learning Objectives</div>
           <div class="stat-value" id="statObjectives">-</div>
-          <div class="stat-subtext">Knowledge taxonomy nodes</div>
+          <div class="stat-subtext">Lessons &amp; concepts in the catalog</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Lesson Progress</div>
+          <div class="stat-value" id="statLessonProgress">-</div>
+          <div class="stat-subtext">Lessons completed / in progress</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Assessment Events</div>
@@ -577,6 +582,7 @@
               <tr>
                 <th>Learner ID (External Ref)</th>
                 <th>Total Events</th>
+                <th>Lesson Progress</th>
                 <th>Mastery Objectives</th>
                 <th>Average Score</th>
                 <th>Status / Gaps</th>
@@ -584,7 +590,7 @@
               </tr>
             </thead>
             <tbody id="learnersTableBody">
-              <tr><td colspan="6" style="text-align: center;">Loading learners...</td></tr>
+              <tr><td colspan="7" style="text-align: center;">Loading learners...</td></tr>
             </tbody>
           </table>
         </div>
@@ -744,6 +750,8 @@
         // Update Stats
         document.getElementById('statLearners').textContent = data.summary.total_learners;
         document.getElementById('statObjectives').textContent = data.summary.total_objectives;
+        document.getElementById('statLessonProgress').textContent =
+          `${data.summary.lessons_complete ?? 0} / ${data.summary.lessons_partial ?? 0}`;
         document.getElementById('statEvents').textContent = data.summary.total_events;
         document.getElementById('statAvgMastery').textContent = `${(data.summary.average_mastery_score * 100).toFixed(1)}%`;
         document.getElementById('statGaps').textContent = data.summary.active_gap_count;
@@ -786,10 +794,17 @@
       }
     }
 
+    function lessonProgressCell(l) {
+      const done = l.lessons_complete || 0;
+      const running = l.lessons_partial || 0;
+      if (!done && !running) return '<span style="color: var(--text-muted);">Belum mulai</span>';
+      return `<span class="badge badge-success">${done} selesai</span> <span class="badge badge-info">${running} berjalan</span>`;
+    }
+
     async function loadLearners() {
       const apiKey = getApiKey();
       const tbody = document.getElementById('learnersTableBody');
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Loading learners...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading learners...</td></tr>';
 
       try {
         const res = await fetch('/v1/learners', {
@@ -802,7 +817,7 @@
         tbody.innerHTML = '';
 
         if (!data.learners || data.learners.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No learners found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No learners found.</td></tr>';
           return;
         }
 
@@ -827,6 +842,7 @@
           tr.innerHTML = `
             <td><strong style="color: #F9FAFB;">${l.external_ref}</strong></td>
             <td>${l.event_count} events</td>
+            <td>${lessonProgressCell(l)}</td>
             <td>${l.mastery_record_count} tracked</td>
             <td style="font-weight: 600;">${scoreText}</td>
             <td>${statusBadge}</td>
@@ -839,7 +855,7 @@
           tbody.appendChild(tr);
         });
       } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="6" style="color: #EF4444; text-align: center;">Error loading learners: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="color: #EF4444; text-align: center;">Error loading learners: ${err.message}</td></tr>`;
       }
     }
 
@@ -851,10 +867,12 @@
       document.getElementById('learnerModal').classList.add('active');
 
       try {
-        const [masteryRes, nextActionRes] = await Promise.all([
+        const [masteryRes, nextActionRes, progressRes] = await Promise.all([
           fetch(`/v1/learners/${externalRef}/mastery`, { headers: { 'Authorization': `Bearer ${apiKey}` } }),
-          fetch(`/v1/learners/${externalRef}/next-action`, { headers: { 'Authorization': `Bearer ${apiKey}` } })
+          fetch(`/v1/learners/${externalRef}/next-action`, { headers: { 'Authorization': `Bearer ${apiKey}` } }),
+          fetch(`/v1/learners/${externalRef}/progress`, { headers: { 'Authorization': `Bearer ${apiKey}` } })
         ]);
+        const progressData = progressRes.ok ? await progressRes.json() : { lessons: [], enrollments: [] };
 
         const masteryData = await masteryRes.json();
         const nextActionData = await nextActionRes.json();
@@ -866,7 +884,7 @@
         }
 
         let html = `
-          <h4 style="margin-bottom: 0.5rem; font-size: 0.95rem;">Competency Mastery Records</h4>
+          <h4 style="margin-bottom: 0.5rem; font-size: 0.95rem;">Quiz Mastery</h4>
           <table class="data-table" style="margin-bottom: 1.25rem;">
             <thead>
               <tr>
@@ -895,6 +913,41 @@
           `;
         });
         html += '</tbody></table>';
+
+        // Lesson progress + enrolled courses (separate from quiz mastery on purpose)
+        const enrollments = progressData.enrollments || [];
+        const lessons = progressData.lessons || [];
+        html += `<h4 style="margin: 0 0 0.5rem; font-size: 0.95rem;">Course Enrollment</h4>`;
+        if (!enrollments.length) {
+          html += '<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">Belum terdaftar di course mana pun.</p>';
+        } else {
+          html += '<div style="margin-bottom: 1.25rem;">';
+          enrollments.forEach(e => {
+            const pct = Math.max(0, Math.min(100, Math.round(e.progress_pct)));
+            html += `
+              <div style="margin-bottom: 0.6rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.825rem;">
+                  <span>${e.label || e.course_id}</span><strong>${pct}%</strong>
+                </div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${pct}%;"></div></div>
+              </div>`;
+          });
+          html += '</div>';
+        }
+        html += `<h4 style="margin: 0 0 0.5rem; font-size: 0.95rem;">Lesson Progress (${progressData.lessons_complete || 0} selesai, ${progressData.lessons_partial || 0} berjalan)</h4>`;
+        if (!lessons.length) {
+          html += '<p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">Belum ada lesson yang dibuka.</p>';
+        } else {
+          html += '<table class="data-table" style="margin-bottom: 1.25rem;"><thead><tr><th>Lesson</th><th>Status</th></tr></thead><tbody>';
+          lessons.slice(0, 15).forEach(l => {
+            const badge = l.status === 'complete'
+              ? '<span class="badge badge-success">Selesai</span>'
+              : '<span class="badge badge-info">Berjalan</span>';
+            html += `<tr><td>${l.label}</td><td>${badge}</td></tr>`;
+          });
+          html += '</tbody></table>';
+          if (lessons.length > 15) html += `<p style="font-size: 0.75rem; color: var(--text-muted);">+ ${lessons.length - 15} lesson lainnya</p>`;
+        }
 
         html += `
           <div class="recommendation-box">

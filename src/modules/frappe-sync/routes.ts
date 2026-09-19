@@ -42,7 +42,7 @@ export async function frappeSyncRoutes(app: FastifyInstance) {
         apiSecret: api_secret,
         enabled,
         lastSyncError: null,
-        ...(reset_watermark ? { lastSyncedAt: null, lastProgressSyncedAt: null } : {}),
+        ...(reset_watermark ? { lastSyncedAt: null, lastProgressSyncedAt: null, lastCatalogSyncedAt: null } : {}),
       },
       create: {
         tenantId: req.tenantId,
@@ -84,6 +84,8 @@ export async function frappeSyncRoutes(app: FastifyInstance) {
     const result = await frappeSyncService.syncTenant(req.tenantId);
     return reply.status(200).send({
       learners_registered: result.learnersRegistered,
+      catalog_lessons: result.catalogLessons,
+      content_queued: result.contentQueued,
       progress_records: result.progressRecords,
       submissions_seen: result.submissionsSeen,
       events_ingested: result.eventsIngested,

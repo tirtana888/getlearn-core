@@ -158,8 +158,18 @@ export async function learnerRoutes(app: FastifyInstance) {
       orderBy: { sourceModified: 'desc' },
     });
 
+    const enrollments = await prisma.enrollment.findMany({
+      where: { tenantId: req.tenantId, learnerId: learner.id },
+      orderBy: { progressPct: 'desc' },
+    });
+
     return reply.status(200).send({
       learner_id: learner.externalRef,
+      enrollments: enrollments.map((e) => ({
+        course_id: e.courseId,
+        label: e.courseLabel,
+        progress_pct: e.progressPct,
+      })),
       lessons_complete: rows.filter((r) => r.status === 'complete').length,
       lessons_partial: rows.filter((r) => r.status === 'partial').length,
       lessons: rows.map((r) => ({

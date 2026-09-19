@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { prisma } from '../src/lib/prisma.js';
 import { frappeSyncService } from '../src/services/frappeSync.service.js';
 import { masteryService } from '../src/services/mastery.service.js';
@@ -57,8 +58,8 @@ async function main() {
   // this is exactly the "5 learners when there should be more" scenario from production.
   const fakeEnrollments = [
     { member: fakeSubmission.member },
-    { member: 'siswa.lain1@nusadayaacademy.com' },
-    { member: 'siswa.lain2@nusadayaacademy.com' },
+    { member: 'siswa.lain1@nusadayaacademy.com', course: 'course-fo', progress: 40 },
+    { member: 'siswa.lain2@nusadayaacademy.com', course: 'course-fo', progress: 10 },
     { member: fakeSubmission.member }, // duplicate (2nd course enrollment) - must be deduped
   ];
 
@@ -71,7 +72,20 @@ async function main() {
     { member: 'siswa.lain2@nusadayaacademy.com', lesson: 'lesson-never-started', course: 'course-fo', status: 'Incomplete', modified: progressModified },
   ];
 
+
+  // Catalog: one course, one chapter, four lessons in this order. The last is an empty shell.
+  const catalogLessons = [
+    { name: fakeLesson.name, title: fakeLesson.title, course: 'course-fo', modified: '2026-09-01 10:00:00', content: JSON.stringify({ blocks: [{ type: 'markdown', data: { text: 'Front office menyambut tamu hotel.' } }, { type: 'quiz', data: { quiz: fakeQuiz.name } }] }) },
+    { name: progressLessonId, title: 'Lesson Tanpa Quiz', course: 'course-fo', modified: '2026-09-01 10:00:00', content: JSON.stringify({ blocks: [{ type: 'scorm', data: { scorm_package: 'F1' } }] }) },
+    { name: 'lesson-second-unstarted', title: 'Lesson Kedua', course: 'course-fo', modified: '2026-09-01 10:00:00', content: JSON.stringify({ blocks: [{ type: 'paragraph', data: { text: 'Materi lesson kedua tentang reservasi.' } }] }) },
+    { name: 'lesson-empty-shell', title: 'Lesson Kosong', course: 'course-fo', modified: '2026-09-01 10:00:00', content: null },
+  ];
+  const scormZip = new JSZip();
+  scormZip.file('res/slide1.html', '<html><body><h1>Slide SCORM</h1><p>Kata dari SCORM asli tentang check-in tamu.</p></body></html>');
+  const scormZipBytes = new Uint8Array(await scormZip.generateAsync({ type: 'nodebuffer' }));
+
   const realFetch = global.fetch;
+  let catalogCalled = false;
   let progressCalled = false;
   let listCalled = false;
   let detailCalled = false;
@@ -87,6 +101,29 @@ async function main() {
     }
 
     const decoded = decodeURIComponent(url);
+
+    if (decoded.includes('/api/resource/LMS Course?')) {
+      catalogCalled = true;
+      return new Response(JSON.stringify({ data: [{ name: 'course-fo', title: 'Front Office' }] }), { status: 200 });
+    }
+    if (decoded.includes('/api/resource/LMS Course/course-fo')) {
+      return new Response(JSON.stringify({ data: { chapters: [{ chapter: 'ch1' }] } }), { status: 200 });
+    }
+    if (decoded.includes('/api/resource/Course Chapter/ch1')) {
+      return new Response(JSON.stringify({ data: { lessons: catalogLessons.map((l) => ({ lesson: l.name })) } }), { status: 200 });
+    }
+    if (decoded.includes('/api/resource/Course Lesson?')) {
+      return new Response(JSON.stringify({ data: catalogLessons }), { status: 200 });
+    }
+    if (decoded.includes('/api/resource/LMS Quiz?')) {
+      return new Response(JSON.stringify({ data: [{ name: fakeQuiz.name, lesson: fakeLesson.name }] }), { status: 200 });
+    }
+    if (decoded.includes('/api/resource/File/F1')) {
+      return new Response(JSON.stringify({ data: { file_url: '/private/files/pkg.zip' } }), { status: 200 });
+    }
+    if (decoded.includes('/private/files/pkg.zip')) {
+      return new Response(scormZipBytes, { status: 200 });
+    }
 
     if (decoded.includes('/api/resource/LMS Course Progress?')) {
       progressCalled = true;
@@ -214,7 +251,59 @@ async function main() {
       { name: 'mastery record computed for the lesson objective (this is the whole point)', pass: Boolean(masteryRecord) },
     ];
 
-    let allPass = true;
+
+    // Background indexing (SCORM download + embed) - wait for it to settle.
+    for (let i = 0; i < 40; i++) {
+      const done = await prisma.contentItem.count({ where: { tenantId, id: { in: catalogLessons.slice(0, 3).map((l) => l.name) }, indexingStatus: 'completed' } });
+      if (done === 3) break;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    const scormItem = await prisma.contentItem.findUnique({ where: { tenantId_id: { tenantId, id: progressLessonId } } });
+    const scormChunks = await prisma.contentChunk.count({ where: { tenantId, contentItemId: progressLessonId } });
+    const introObjective = await prisma.learningObjective.findUnique({ where: { tenantId_id: { tenantId, id: fakeLesson.name } } });
+    const secondObjective = await prisma.learningObjective.findUnique({ where: { tenantId_id: { tenantId, id: 'lesson-second-unstarted' } } });
+    const enrollmentRow = noQuizLearner1
+      ? await prisma.enrollment.findUnique({ where: { tenantId_learnerId_courseId: { tenantId, learnerId: noQuizLearner1.id, courseId: 'course-fo' } } })
+      : null;
+
+    const catalogChecks = [
+      { name: 'catalog endpoint called', pass: catalogCalled },
+      { name: 'result.catalogLessons === 4 (whole catalog, incl. never-touched lessons)', pass: result.catalogLessons === 4 },
+      { name: 'result.contentQueued === 3 (empty shell not queued)', pass: result.contentQueued === 3 },
+      { name: 'lesson ordered within its course + labelled with the course title', pass: introObjective?.sequence === 0 && secondObjective?.sequence === 2 && introObjective?.courseLabel === 'Front Office' },
+      { name: 'quiz attached to its lesson via LMS Quiz.lesson', pass: introObjective?.assessmentRef === fakeQuiz.name },
+      { name: 'SCORM lesson material downloaded with auth and indexed', pass: scormItem?.indexingStatus === 'completed' && (scormItem?.rawText || '').includes('Kata dari SCORM asli') },
+      { name: 'SCORM lesson has embedded chunks for RAG', pass: scormChunks > 0 },
+      { name: 'version marker written only after successful indexing', pass: (scormItem?.sourceUri || '').startsWith('frappe:lesson/') },
+      { name: 'enrollment stored with course + progress', pass: enrollmentRow?.progressPct === 40 && enrollmentRow?.courseLabel === 'Front Office' },
+    ];
+    for (const c of catalogChecks) {
+      console.log(`  [${c.pass ? 'PASS' : 'FAIL'}] ${c.name}`);
+    }
+
+    // Recommendation ladder for a learner (siswa.lain1), one signal at a time.
+    const l1 = noQuizLearner1!.id;
+    const step = async () => masteryService.getNextAction(tenantId, l1);
+    const s1 = await step();
+    await prisma.lessonProgress.create({ data: { tenantId, learnerId: l1, lessonId: fakeLesson.name, courseId: 'course-fo', status: 'complete', sourceModified: new Date() } });
+    const s2 = await step();
+    await prisma.masteryRecord.create({ data: { tenantId, learnerId: l1, objectiveId: fakeLesson.name, score: 0.9, evidenceCount: 5 } });
+    const s3 = await step();
+    await prisma.lessonProgress.create({ data: { tenantId, learnerId: l1, lessonId: 'lesson-second-unstarted', courseId: 'course-fo', status: 'complete', sourceModified: new Date() } });
+    const s4 = await step();
+
+    const ladderChecks = [
+      { name: 'enrolled, nothing started -> "start" the first lesson that has material', pass: s1.action === 'start' && s1.target_id === fakeLesson.name },
+      { name: 'finished a lesson whose quiz was never taken -> "practice" that quiz', pass: s2.action === 'practice' && s2.target_id === fakeQuiz.name },
+      { name: 'quiz taken -> moves on to the next unstarted lesson (second)', pass: s3.action === 'start' && s3.target_id === 'lesson-second-unstarted' },
+      { name: 'only an empty shell left -> never recommended as a lesson to start', pass: s4.target_id !== 'lesson-empty-shell' && s4.action !== 'start' },
+    ];
+    for (const c of ladderChecks) {
+      console.log(`  [${c.pass ? 'PASS' : 'FAIL'}] ${c.name}`);
+    }
+    const catalogAllPass = [...catalogChecks, ...ladderChecks].every((c) => c.pass);
+
+    let allPass = catalogAllPass;
     for (const c of checks) {
       console.log(`  [${c.pass ? 'PASS' : 'FAIL'}] ${c.name}`);
       if (!c.pass) allPass = false;
@@ -268,7 +357,11 @@ async function main() {
     console.log('\n>>> All checks passed <<<');
   } finally {
     global.fetch = realFetch;
-    await prisma.lessonProgress.deleteMany({ where: { tenantId, lessonId: progressLessonId } });
+    await prisma.lessonProgress.deleteMany({ where: { tenantId } });
+    await prisma.enrollment.deleteMany({ where: { tenantId } });
+    await prisma.contentItem.deleteMany({ where: { tenantId, id: { in: catalogLessons.map((l) => l.name) } } });
+    await prisma.masteryRecord.deleteMany({ where: { tenantId, objectiveId: fakeLesson.name } });
+    await prisma.learningObjective.deleteMany({ where: { tenantId, id: { in: ['lesson-second-unstarted', 'lesson-empty-shell'] } } });
     await prisma.learningObjective.deleteMany({ where: { tenantId, id: progressLessonId } });
     await prisma.assessmentEvent.deleteMany({ where: { tenantId, id: { startsWith: 'frappe_qr_' } } });
     await prisma.masteryRecord.deleteMany({ where: { tenantId, objectiveId: fakeLesson.name } });

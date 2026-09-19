@@ -463,6 +463,11 @@ export class RagService {
     }
   }
 
+  /** SCORM extraction for a package behind authentication (e.g. a private Frappe file). */
+  async extractScormFromUrl(url: string, headers?: Record<string, string>): Promise<string> {
+    return this.extractFromScorm(url, headers);
+  }
+
   /**
    * Extract text from a SCORM package. source_uri may point to either:
    *  - a downloadable .zip of the whole package (most SCORM exports, incl. Easygenerator), or
@@ -470,15 +475,15 @@ export class RagService {
    * Which one it is gets detected by sniffing the fetched bytes for the ZIP magic number,
    * not by file extension.
    */
-  private async extractFromScorm(sourceUri: string): Promise<string> {
+  private async extractFromScorm(sourceUri: string, headers?: Record<string, string>): Promise<string> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    const timeout = setTimeout(() => controller.abort(), 120000); // 120s: real packages run to tens of MB
     let res: Response;
     try {
-      res = await fetch(sourceUri, { signal: controller.signal });
+      res = await fetch(sourceUri, { signal: controller.signal, headers });
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        throw new Error(`Network timeout fetching SCORM package from ${sourceUri} (exceeded 60s)`);
+        throw new Error(`Network timeout fetching SCORM package from ${sourceUri} (exceeded 120s)`);
       }
       throw new Error(`Failed to fetch SCORM package from ${sourceUri}: ${err.message}`);
     } finally {

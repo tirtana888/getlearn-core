@@ -21,6 +21,7 @@ model Tenant {
   assessmentEvents AssessmentEvent[]
   masteryRecords   MasteryRecord[]
   lessonProgress   LessonProgress[]
+  enrollments      Enrollment[]
   contentChunks    ContentChunk[]
   chatSessions     ChatSession[]
   frappeConnection FrappeConnection?
@@ -40,6 +41,7 @@ model FrappeConnection {
   enabled              Boolean   @default(true)
   lastSyncedAt         DateTime? @map("last_synced_at")
   lastProgressSyncedAt DateTime? @map("last_progress_synced_at")
+  lastCatalogSyncedAt  DateTime? @map("last_catalog_synced_at")
   lastSyncError        String?   @map("last_sync_error") @db.Text
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
@@ -60,6 +62,7 @@ model Learner {
   assessmentEvents AssessmentEvent[]
   masteryRecords   MasteryRecord[]
   lessonProgress   LessonProgress[]
+  enrollments      Enrollment[]
   chatSessions     ChatSession[]
 
   @@unique([tenantId, externalRef])
@@ -68,12 +71,16 @@ model Learner {
 }
 
 model LearningObjective {
-  id        String   @id // canonical ID scoped per tenant (e.g. obj_fraction_add)
-  tenantId  String   @map("tenant_id")
-  label     String
-  parentId  String?  @map("parent_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            String   @id // canonical ID scoped per tenant (e.g. obj_fraction_add)
+  tenantId      String   @map("tenant_id")
+  label         String
+  parentId      String?  @map("parent_id")
+  courseId      String?  @map("course_id")
+  courseLabel   String?  @map("course_label")
+  sequence      Int? // order of this lesson within its course
+  assessmentRef String?  @map("assessment_ref") // id of the quiz attached to this lesson, if any
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   masteryRecords MasteryRecord[]
@@ -264,4 +271,22 @@ model LessonProgress {
   @@unique([tenantId, learnerId, lessonId])
   @@index([tenantId, learnerId])
   @@map("lesson_progress")
+}
+
+// A learner's enrollment in a course (what "your courses" means for recommendations).
+model Enrollment {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  learnerId   String   @map("learner_id")
+  courseId    String   @map("course_id")
+  courseLabel String?  @map("course_label")
+  progressPct Float    @default(0) @map("progress_pct")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  learner Learner @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, learnerId, courseId])
+  @@index([tenantId, learnerId])
+  @@map("enrollments")
 }
