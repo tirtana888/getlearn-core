@@ -132,6 +132,7 @@ export class ChatService {
     baseUrl?: string,
     clientContext?: string
   ) {
+    const startedAt = Date.now();
     const session = await prisma.chatSession.findUnique({
       where: { id: sessionId },
       include: { learner: true },
@@ -233,8 +234,10 @@ export class ChatService {
     const isVague = userMessage.trim().split(/\s+/).length <= 3;
     const isOverview = OVERVIEW_QUESTION_RE.test(userMessage);
     let contextIsOnlyFallback = false;
+    let usedLeadingChunks = false;
     if (retrievedChunks.length === 0 && scopedContentIds && (isOverview || isVague)) {
       retrievedChunks = await ragService.getLeadingChunks(tenantId, scopedContentIds, 4);
+      usedLeadingChunks = retrievedChunks.length > 0;
       // Handed to the model as background so it can read a vague message, but not a passage that
       // matched the question - so it must not be listed as a source under "makasih ya".
       contextIsOnlyFallback = retrievedChunks.length > 0 && !isOverview;
@@ -423,7 +426,14 @@ ${userMessage}`;
       }
     }
 
-    // 5. Save Assistant Message
+    // 5. Save Assistant Message, with what is needed to analyse the conversation later
+    let outcome: 'answered' | 'no_material' | 'vague_fallback' | 'provider_failed' | 'dev_fallback';
+    if (!this.hasAnyProvider()) outcome = 'dev_fallback';
+    else if (!providerUsed) outcome = 'provider_failed';
+    else if (contextIsOnlyFallback) outcome = 'vague_fallback';
+    else if (retrievedChunks.length === 0) outcome = 'no_material';
+    else outcome = 'answered';
+
     const assistantMsg = await prisma.chatMessage.create({
       data: {
         sessionId: session.id,
@@ -431,6 +441,14 @@ ${userMessage}`;
         content: assistantReply,
         sourceContentIds,
         audioUrl: finalAudioUrl,
+        outcome,
+        provider: providerUsed,
+        tokensUsed,
+        latencyMs: Date.now() - startedAt,
+        retrievalCount: retrievedChunks.length,
+        // A real similarity only when a passage actually matched the question.
+        topSimilarity: contextIsOnlyFallback || usedLeadingChunks || !retrievedChunks.length ? null : retrievedChunks[0].similarity,
+        guardrail: guardrailTrigger === 'none' ? null : guardrailTrigger,
       },
     });
 

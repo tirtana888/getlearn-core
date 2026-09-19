@@ -244,11 +244,22 @@ model ChatMessage {
   content          String     @db.Text
   sourceContentIds String[]   @map("source_content_ids") // Badges / lesson citations
   audioUrl         String?    @map("audio_url") // Fish Audio TTS URL if voice requested
+  // --- analytics (assistant messages only; null on older rows) ---
+  outcome          String? // answered | no_material | vague_fallback | provider_failed | dev_fallback
+  provider         String? // gemini | deepseek
+  tokensUsed       Int?       @map("tokens_used")
+  latencyMs        Int?       @map("latency_ms")
+  retrievalCount   Int?       @map("retrieval_count") // passages handed to the model
+  topSimilarity    Float?     @map("top_similarity") // best passage score; null when none matched / lesson-start fallback
+  guardrail        String? // why hint-only mode was on, if it was
+  feedback         Int? // learner thumbs: 1 up, -1 down
+  feedbackAt       DateTime?  @map("feedback_at")
   createdAt        DateTime   @default(now()) @map("created_at")
 
   session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
+  @@index([createdAt])
   @@map("chat_messages")
 }
 

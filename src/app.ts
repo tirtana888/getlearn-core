@@ -11,6 +11,7 @@ import { eventRoutes } from './modules/events/routes.js';
 import { learnerRoutes } from './modules/learners/routes.js';
 import { adminRoutes } from './modules/admin/routes.js';
 import { chatRoutes } from './modules/chat/routes.js';
+import { chatRecordsRoutes } from './modules/chat/records.js';
 import { analyticsRoutes } from './modules/analytics/routes.js';
 import { frappeSyncRoutes } from './modules/frappe-sync/routes.js';
 
@@ -107,6 +108,7 @@ export async function buildApp() {
   await app.register(eventRoutes);
   await app.register(learnerRoutes);
   await app.register(chatRoutes);
+  await app.register(chatRecordsRoutes);
   await app.register(frappeSyncRoutes);
 
   // Global Error Handler

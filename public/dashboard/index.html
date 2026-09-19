@@ -556,6 +556,9 @@
       <button class="tab-btn" onclick="switchTab('rag')">
         <span>🔍</span> Vector RAG Explorer
       </button>
+      <button class="tab-btn" onclick="switchTab('chat')">
+        <span>💬</span> Chat Analytics
+      </button>
     </div>
 
     <!-- TAB 1: OVERVIEW & ANALYTICS -->
@@ -709,6 +712,70 @@
     </section>
 
     <!-- TAB 4: VECTOR RAG EXPLORER -->
+    <!-- TAB 5: CHAT ANALYTICS -->
+    <section id="tab-chat" style="display: none;">
+      <div class="panel" style="margin-bottom: 1.25rem;">
+        <div class="panel-header">
+          <div class="panel-title">Chat Analytics</div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <select id="chatDays" class="input-key" style="width: auto;" onchange="loadChatAnalytics()">
+              <option value="7">7 hari</option>
+              <option value="30" selected>30 hari</option>
+              <option value="90">90 hari</option>
+            </select>
+            <select id="chatOutcome" class="input-key" style="width: auto;" onchange="loadChatAnalytics()">
+              <option value="">Semua hasil</option>
+              <option value="answered">Terjawab dari materi</option>
+              <option value="no_material">Materi tidak ditemukan</option>
+              <option value="vague_fallback">Pesan samar</option>
+              <option value="provider_failed">AI gagal menjawab</option>
+            </select>
+            <button class="btn btn-secondary" onclick="downloadChatRecords('csv')">Unduh CSV</button>
+            <button class="btn btn-secondary" onclick="downloadChatRecords('jsonl')">Unduh JSONL</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Pertanyaan</div><div class="stat-value" id="chatStatQuestions">-</div><div class="stat-subtext" id="chatStatSessions">-</div></div>
+        <div class="stat-card"><div class="stat-label">Siswa Aktif</div><div class="stat-value" id="chatStatLearners">-</div><div class="stat-subtext" id="chatStatPerSession">-</div></div>
+        <div class="stat-card"><div class="stat-label">Terjawab dari Materi</div><div class="stat-value" id="chatStatAnswered">-</div><div class="stat-subtext">Ada bagian materi yang cocok</div></div>
+        <div class="stat-card"><div class="stat-label">Materi Tidak Ditemukan</div><div class="stat-value" id="chatStatNoMaterial" style="color: #FBBF24;">-</div><div class="stat-subtext">Indikasi konten yang kurang</div></div>
+        <div class="stat-card"><div class="stat-label">AI Gagal Menjawab</div><div class="stat-value" id="chatStatFailed" style="color: #F87171;">-</div><div class="stat-subtext" id="chatStatProviders">-</div></div>
+        <div class="stat-card"><div class="stat-label">Umpan Balik</div><div class="stat-value" id="chatStatFeedback">-</div><div class="stat-subtext" id="chatStatTokens">-</div></div>
+      </div>
+
+      <div class="panel" style="margin-bottom: 1.25rem;">
+        <div class="panel-header"><div class="panel-title">Pertanyaan yang belum terjawab materi</div><span class="badge badge-warning">Bahan untuk menambah konten</span></div>
+        <div class="panel-body">
+          <table class="data-table">
+            <thead><tr><th>Waktu</th><th>Lesson</th><th>Pertanyaan</th></tr></thead>
+            <tbody id="chatGapsBody"><tr><td colspan="3" style="text-align: center;">Memuat...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom: 1.25rem;">
+        <div class="panel-header"><div class="panel-title">Lesson yang paling banyak ditanyakan</div></div>
+        <div class="panel-body">
+          <table class="data-table">
+            <thead><tr><th>Lesson</th><th>Sesi</th><th>Pertanyaan</th></tr></thead>
+            <tbody id="chatLessonsBody"><tr><td colspan="3" style="text-align: center;">Memuat...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header"><div class="panel-title">Rekaman percakapan terbaru</div><span class="badge badge-info" id="chatRecordsCount">-</span></div>
+        <div class="panel-body">
+          <table class="data-table">
+            <thead><tr><th>Waktu</th><th>Siswa</th><th>Lesson</th><th>Pertanyaan</th><th>Jawaban</th><th>Hasil</th><th>Model</th></tr></thead>
+            <tbody id="chatRecordsBody"><tr><td colspan="7" style="text-align: center;">Memuat...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-rag" style="display: none;">
       <div class="panel">
         <div class="panel-header">
@@ -772,7 +839,7 @@
 
     function switchTab(tabId) {
       activeTab = tabId;
-      const tabs = ['overview', 'learners', 'coach', 'rag'];
+      const tabs = ['overview', 'learners', 'coach', 'rag', 'chat'];
       tabs.forEach(t => {
         document.getElementById(`tab-${t}`).style.display = (t === tabId) ? 'block' : 'none';
       });
@@ -783,6 +850,7 @@
       });
 
       if (tabId === 'learners') loadLearners();
+      if (tabId === 'chat') loadChatAnalytics();
     }
 
     // ---- Smooth live refresh -------------------------------------------------
@@ -875,6 +943,7 @@
       try {
         const jobs = [fetchDashboardData({ silent: true }), fetchSyncStatus()];
         if (activeTab === 'learners') jobs.push(loadLearners({ silent: true }));
+        if (activeTab === 'chat') jobs.push(loadChatAnalytics({ silent: true }));
         const results = await Promise.all(jobs);
         if (results.includes(false)) throw new Error('refresh failed');
         lastRefreshAt = Date.now();
@@ -1325,6 +1394,120 @@
         container.innerHTML = html;
       } catch (err) {
         container.innerHTML = `<div style="color: #EF4444;">Search failed: ${err.message}</div>`;
+      }
+    }
+
+    // ---- Chat analytics tab ------------------------------------------------------------------
+    // Learner text is untrusted input: everything from a chat record goes through esc() before it
+    // reaches innerHTML.
+    function esc(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    const OUTCOME_LABELS = {
+      answered: ['Terjawab', 'badge-success'],
+      no_material: ['Materi tidak ada', 'badge-warning'],
+      vague_fallback: ['Pesan samar', 'badge-info'],
+      provider_failed: ['AI gagal', 'badge-danger'],
+      dev_fallback: ['Tanpa AI', 'badge-info'],
+      unknown: ['Data lama', 'badge-info'],
+    };
+
+    function chatOutcomeBadge(outcome) {
+      const [label, cls] = OUTCOME_LABELS[outcome] || [outcome, 'badge-info'];
+      return `<span class="badge ${cls}">${esc(label)}</span>`;
+    }
+
+    function chatQuery(extra) {
+      const days = Number(document.getElementById('chatDays').value) || 30;
+      const q = new URLSearchParams({ from: new Date(Date.now() - days * 86400000).toISOString(), ...extra });
+      const outcome = document.getElementById('chatOutcome').value;
+      if (outcome) q.set('outcome', outcome);
+      return q.toString();
+    }
+
+    function shortTime(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+
+    async function loadChatAnalytics(opts) {
+      const silent = !!(opts && opts.silent);
+      const headers = { 'Authorization': `Bearer ${getApiKey()}` };
+      const days = Number(document.getElementById('chatDays').value) || 30;
+      try {
+        const [sumRes, recRes] = await Promise.all([
+          fetch(`/v1/analytics/chat?days=${days}`, { headers }),
+          fetch(`/v1/chat/records?${chatQuery({ limit: '50' })}`, { headers }),
+        ]);
+        const summary = await sumRes.json();
+        const recs = await recRes.json();
+        if (!sumRes.ok) throw new Error(summary?.error?.message || `HTTP ${sumRes.status}`);
+        if (!recRes.ok) throw new Error(recs?.error?.message || `HTTP ${recRes.status}`);
+
+        const pct = (v) => (v == null ? '-' : `${v}%`);
+        setText('chatStatQuestions', summary.questions);
+        setText('chatStatSessions', `${summary.sessions} sesi dalam ${summary.period_days} hari`);
+        setText('chatStatLearners', summary.active_learners);
+        setText('chatStatPerSession', `${summary.questions_per_session} pertanyaan / sesi`);
+        setText('chatStatAnswered', pct(summary.answered_rate));
+        setText('chatStatNoMaterial', pct(summary.no_material_rate));
+        setText('chatStatFailed', pct(summary.failure_rate));
+        setText('chatStatProviders', summary.providers.length
+          ? summary.providers.map((p) => `${p.provider} ${p.n}x, ${p.avg_latency_ms} ms`).join(' · ')
+          : 'Belum ada data model');
+        setText('chatStatFeedback', `${summary.feedback.up} 👍 / ${summary.feedback.down} 👎`);
+        setText('chatStatTokens', `${Number(summary.tokens_total).toLocaleString()} token terpakai`);
+
+        setRows(document.getElementById('chatGapsBody'), summary.unanswered_questions.length
+          ? summary.unanswered_questions.map((g) => `<tr><td>${esc(shortTime(g.asked_at))}</td><td>${esc(g.lesson || '-')}</td><td>${esc(g.question)}</td></tr>`).join('')
+          : '<tr><td colspan="3" style="text-align: center;">Belum ada pertanyaan tanpa materi. Bagus.</td></tr>');
+
+        setRows(document.getElementById('chatLessonsBody'), summary.top_lessons.length
+          ? summary.top_lessons.map((l) => `<tr><td>${esc(l.lesson)}</td><td>${l.sessions}</td><td>${l.questions}</td></tr>`).join('')
+          : '<tr><td colspan="3" style="text-align: center;">Belum ada chat yang terikat ke lesson.</td></tr>');
+
+        document.getElementById('chatRecordsCount').textContent = `${recs.records.length} terbaru`;
+        setRows(document.getElementById('chatRecordsBody'), recs.records.length
+          ? recs.records.map((r) => `<tr>
+              <td style="white-space: nowrap;">${esc(shortTime(r.answered_at))}</td>
+              <td><code style="font-family: monospace;">${esc(r.learner_id.slice(-6))}</code></td>
+              <td>${esc(r.lesson || '-')}</td>
+              <td title="${esc(r.question)}">${esc(r.question.slice(0, 90))}${r.question.length > 90 ? '…' : ''}</td>
+              <td title="${esc(r.answer)}">${esc(r.answer.slice(0, 120))}${r.answer.length > 120 ? '…' : ''}</td>
+              <td>${chatOutcomeBadge(r.outcome)}</td>
+              <td>${esc(r.provider || '-')}${r.latency_ms != null ? `<div style="color: var(--text-muted); font-size: 0.7rem;">${r.latency_ms} ms</div>` : ''}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="7" style="text-align: center;">Belum ada percakapan pada periode ini.</td></tr>');
+        return true;
+      } catch (err) {
+        if (!silent) {
+          setRows(document.getElementById('chatRecordsBody'), `<tr><td colspan="7" style="color: #EF4444; text-align: center;">Gagal memuat chat analytics: ${esc(err.message)}</td></tr>`);
+        }
+        return false;
+      }
+    }
+
+    // The export endpoint needs the Authorization header, so it is fetched and saved as a blob
+    // rather than opened as a plain link.
+    async function downloadChatRecords(format) {
+      try {
+        const res = await fetch(`/v1/chat/records/export?${chatQuery({ format, limit: '5000' })}`, {
+          headers: { 'Authorization': `Bearer ${getApiKey()}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-records-${new Date().toISOString().slice(0, 10)}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert(`Gagal mengunduh rekaman: ${err.message}`);
       }
     }
 
